@@ -1,0 +1,6 @@
+pandas
+openpyxl
+folium
+geopy
+rich
+scikit-learn
