@@ -155,6 +155,18 @@ def update_dashboard(tiers, classes, year_range):
     # Map
     fig = go.Figure()
 
+    # Heatmap layer underneath markers
+    fig.add_trace(go.Densitymap(
+        lat=df["lat"],
+        lon=df["lon"],
+        z=df["composite_score"],
+        radius=20,
+        colorscale=[[0, "rgba(0,255,0,0)"], [0.3, "rgba(255,255,0,0.5)"], [1, "rgba(255,0,0,0.8)"]],
+        showscale=False,
+        name="Risk Heatmap",
+        hoverinfo="skip",
+    ))
+
     for tier in ["Monitor", "Larvicide", "Adulticide"]:
         subset = df[df["risk_tier"] == tier]
         if subset.empty:
@@ -175,7 +187,7 @@ def update_dashboard(tiers, classes, year_range):
         ))
 
     fig.update_layout(
-        map=dict(style="open-street-map", center=dict(lat=37.1041, lon=-113.5841), zoom=11),
+        map=dict(style="carto-darkmatter", center=dict(lat=37.1041, lon=-113.5841), zoom=11),
         margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="#0f1117",
         legend=dict(bgcolor="#1a1d2e", font=dict(color="#fff")),
