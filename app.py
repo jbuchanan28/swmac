@@ -11,6 +11,10 @@ DATA_DIR = Path(__file__).parent / "data"
 
 TIER_COLORS = {"Monitor": "#2ecc71", "Larvicide": "#f39c12", "Adulticide": "#e74c3c"}
 RISK_COLORS = {"HIGH": "#e74c3c", "MEDIUM": "#f39c12", "LOW": "#2ecc71"}
+CHART_BG = "#1a1d2e"
+CHART_PAPER = "#0f1117"
+AXIS_COLOR = "#555"
+TEXT_COLOR = "#ccc"
 
 
 def load_data():
@@ -19,6 +23,19 @@ def load_data():
     df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
     df["composite_score"] = df["composite_score"].round(2)
     return df
+
+
+def chart_layout(title):
+    return dict(
+        title=dict(text=title, font=dict(color=TEXT_COLOR, size=13), x=0.02),
+        paper_bgcolor=CHART_PAPER,
+        plot_bgcolor=CHART_BG,
+        font=dict(color=TEXT_COLOR, size=11),
+        margin=dict(l=40, r=16, t=40, b=40),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10)),
+        xaxis=dict(gridcolor=AXIS_COLOR, zerolinecolor=AXIS_COLOR),
+        yaxis=dict(gridcolor=AXIS_COLOR, zerolinecolor=AXIS_COLOR),
+    )
 
 
 app = Dash(__name__, title="SWMAC Risk Dashboard")
@@ -48,9 +65,26 @@ app.layout = html.Div(
             style={"display": "flex", "gap": "12px", "padding": "16px 24px", "flexWrap": "wrap"},
         ),
 
+        # ── Analytics Section ──────────────────────────────────────────
+        html.Div(
+            style={"padding": "0 24px 8px"},
+            children=[
+                html.H3("Analytics", style={"color": "#fff", "fontSize": "16px", "marginBottom": "12px"}),
+                html.Div(
+                    style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "12px"},
+                    children=[
+                        dcc.Graph(id="chart-permits-by-year", style={"height": "240px"}),
+                        dcc.Graph(id="chart-risk-donut",      style={"height": "240px"}),
+                        dcc.Graph(id="chart-monthly",         style={"height": "240px"}),
+                        dcc.Graph(id="chart-top-types",       style={"height": "240px"}),
+                    ],
+                ),
+            ],
+        ),
+
         # Filters
         html.Div(
-            style={"display": "flex", "gap": "16px", "padding": "0 24px 16px", "flexWrap": "wrap", "alignItems": "flex-end"},
+            style={"display": "flex", "gap": "16px", "padding": "8px 24px 16px", "flexWrap": "wrap", "alignItems": "flex-end"},
             children=[
                 html.Div([
                     html.Label("Risk Tier", style={"fontSize": "12px", "color": "#aaa"}),
@@ -138,6 +172,10 @@ app.layout = html.Div(
     Output("risk-map", "figure"),
     Output("permits-table", "data"),
     Output("stat-cards", "children"),
+    Output("chart-permits-by-year", "figure"),
+    Output("chart-risk-donut", "figure"),
+    Output("chart-monthly", "figure"),
+    Output("chart-top-types", "figure"),
     Input("filter-tier", "value"),
     Input("filter-class", "value"),
     Input("filter-year", "value"),
@@ -152,54 +190,42 @@ def update_dashboard(tiers, classes, year_range):
     if year_range:
         df = df[(df["date"].dt.year >= year_range[0]) & (df["date"].dt.year <= year_range[1])]
 
-    # Map
-    fig = go.Figure()
-
-    # Heatmap layer underneath markers
-    fig.add_trace(go.Densitymap(
-        lat=df["lat"],
-        lon=df["lon"],
-        z=df["composite_score"],
+    # ── Map ──────────────────────────────────────────────────────────
+    map_fig = go.Figure()
+    map_fig.add_trace(go.Densitymap(
+        lat=df["lat"], lon=df["lon"], z=df["composite_score"],
         radius=20,
         colorscale=[[0, "rgba(0,255,0,0)"], [0.3, "rgba(255,255,0,0.5)"], [1, "rgba(255,0,0,0.8)"]],
-        showscale=False,
-        name="Risk Heatmap",
-        hoverinfo="skip",
+        showscale=False, name="Risk Heatmap", hoverinfo="skip",
     ))
-
     for tier in ["Monitor", "Larvicide", "Adulticide"]:
         subset = df[df["risk_tier"] == tier]
         if subset.empty:
             continue
-        fig.add_trace(go.Scattermap(
-            lat=subset["lat"],
-            lon=subset["lon"],
-            mode="markers",
+        map_fig.add_trace(go.Scattermap(
+            lat=subset["lat"], lon=subset["lon"], mode="markers",
             marker=dict(size=8, color=TIER_COLORS[tier], opacity=0.8),
             name=tier,
             text=subset.apply(
-                lambda r: f"<b>{r.get('project_name', '')}</b><br>"
-                          f"{r.get('address', '')}<br>"
-                          f"Score: {r.get('composite_score', 0):.2f} — {r.get('risk_tier', '')}",
+                lambda r: f"<b>{r.get('project_name','')}</b><br>{r.get('address','')}<br>"
+                          f"Score: {r.get('composite_score',0):.2f} — {r.get('risk_tier','')}",
                 axis=1,
             ),
             hoverinfo="text",
         ))
-
-    fig.update_layout(
+    map_fig.update_layout(
         map=dict(style="open-street-map", center=dict(lat=37.1041, lon=-113.5841), zoom=11),
         margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="#0f1117",
         legend=dict(bgcolor="#1a1d2e", font=dict(color="#fff")),
-        showlegend=True,
     )
 
-    # Table data
+    # ── Table ────────────────────────────────────────────────────────
     table_cols = ["permit_id", "date_str", "project_name", "address", "permit_type",
                   "risk_class", "composite_score", "risk_tier"]
     table_data = df[table_cols].sort_values("composite_score", ascending=False).to_dict("records")
 
-    # Stat cards
+    # ── Stat cards ───────────────────────────────────────────────────
     def card(label, value, color="#fff"):
         return html.Div(
             style={"backgroundColor": "#1a1d2e", "borderRadius": "8px", "padding": "12px 20px",
@@ -219,7 +245,72 @@ def update_dashboard(tiers, classes, year_range):
         card("HIGH Risk", (df["risk_class"] == "HIGH").sum(), "#e74c3c"),
     ]
 
-    return fig, table_data, cards
+    # ── Chart 1: Permits by year, stacked by risk class ──────────────
+    yearly = df.groupby([df["date"].dt.year, "risk_class"]).size().unstack(fill_value=0).reset_index()
+    yearly.columns.name = None
+    yearly_fig = go.Figure()
+    for rc, color in RISK_COLORS.items():
+        if rc in yearly.columns:
+            yearly_fig.add_trace(go.Bar(
+                x=yearly["date"], y=yearly[rc],
+                name=rc, marker_color=color,
+            ))
+    yearly_fig.update_layout(
+        **chart_layout("Permits by Year"),
+        barmode="stack",
+        xaxis=dict(title="Year", gridcolor=AXIS_COLOR),
+        yaxis=dict(title="Count", gridcolor=AXIS_COLOR),
+    )
+
+    # ── Chart 2: Risk tier donut ──────────────────────────────────────
+    donut_fig = go.Figure(go.Pie(
+        labels=list(TIER_COLORS.keys()),
+        values=[tier_counts.get(t, 0) for t in TIER_COLORS],
+        hole=0.55,
+        marker=dict(colors=list(TIER_COLORS.values())),
+        textfont=dict(color="#fff"),
+    ))
+    donut_fig.update_layout(
+        **chart_layout("Risk Tier Breakdown"),
+        showlegend=True,
+    )
+
+    # ── Chart 3: Seasonal pattern — avg permits per calendar month ────
+    df["month"] = df["date"].dt.month
+    monthly = df.groupby("month").size().reindex(range(1, 13), fill_value=0)
+    month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    monthly_fig = go.Figure(go.Bar(
+        x=month_names,
+        y=monthly.values,
+        marker_color="#3498db",
+    ))
+    monthly_fig.update_layout(
+        **chart_layout("Permits by Month (Seasonal Pattern)"),
+        xaxis=dict(title="Month", gridcolor=AXIS_COLOR),
+        yaxis=dict(title="Count", gridcolor=AXIS_COLOR),
+    )
+
+    # ── Chart 4: Top 10 permit types by HIGH risk count ───────────────
+    top_types = (
+        df[df["risk_class"] == "HIGH"]
+        .groupby("permit_type").size()
+        .sort_values(ascending=True)
+        .tail(10)
+    )
+    top_fig = go.Figure(go.Bar(
+        x=top_types.values,
+        y=top_types.index,
+        orientation="h",
+        marker_color="#e74c3c",
+    ))
+    top_fig.update_layout(
+        **chart_layout("Top HIGH Risk Permit Types"),
+        xaxis=dict(title="Count", gridcolor=AXIS_COLOR),
+        yaxis=dict(gridcolor=AXIS_COLOR),
+        margin=dict(l=160, r=16, t=40, b=40),
+    )
+
+    return map_fig, table_data, cards, yearly_fig, donut_fig, monthly_fig, top_fig
 
 
 if __name__ == "__main__":
