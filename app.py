@@ -187,7 +187,7 @@ def update_dashboard(tiers, classes, year_range):
         ))
 
     fig.update_layout(
-        map=dict(style="carto-darkmatter", center=dict(lat=37.1041, lon=-113.5841), zoom=11),
+        map=dict(style="open-street-map", center=dict(lat=37.1041, lon=-113.5841), zoom=11),
         margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="#0f1117",
         legend=dict(bgcolor="#1a1d2e", font=dict(color="#fff")),
