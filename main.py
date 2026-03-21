@@ -74,6 +74,11 @@ def main():
     clusters = find_clusters(scored)
     print(f"      Scored {len(scored)} permits — {len(clusters)} cluster(s) detected")
 
+    # Save for dashboard
+    out_path = Path(__file__).parent / "data" / "scored_permits.csv"
+    scored.to_csv(out_path, index=False)
+    print(f"      Saved {out_path}")
+
     # 5. Output
     print("\n[5/5] Generating output...\n")
 
