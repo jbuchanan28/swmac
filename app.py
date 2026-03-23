@@ -251,60 +251,160 @@ def update_dashboard(tab, tiers, classes, year_range):
         return content, cards
 
     # ── ANALYTICS TAB ────────────────────────────────────────────────
-    # Chart 1: Permits by year stacked by risk class
-    yearly = df.groupby([df["date"].dt.year, "risk_class"]).size().unstack(fill_value=0).reset_index()
-    yearly.columns.name = None
-    yearly_fig = go.Figure()
-    for rc, color in RISK_COLORS.items():
-        if rc in yearly.columns:
-            yearly_fig.add_trace(go.Bar(x=yearly["date"], y=yearly[rc], name=rc, marker_color=color))
-    yearly_fig.update_layout(**chart_layout("Permits by Year"), barmode="stack",
-                             xaxis=dict(title="Year", gridcolor=AXIS_COLOR),
-                             yaxis=dict(title="Count", gridcolor=AXIS_COLOR))
+    # Colorway: warm white / burnt orange / amber / yellow
+    A_PAPER  = "#FFF8EE"
+    A_BG     = "#FFFDF7"
+    A_TEXT   = "#3D2B1F"
+    A_GRID   = "#DDD0BE"
+    A_ORANGE = "#CC5500"
+    A_AMBER  = "#F5A623"
+    A_YELLOW = "#FFD166"
 
-    # Chart 2: Risk tier donut
-    donut_fig = go.Figure(go.Pie(
-        labels=list(TIER_COLORS.keys()),
-        values=[tier_counts.get(t, 0) for t in TIER_COLORS],
-        hole=0.55,
-        marker=dict(colors=list(TIER_COLORS.values())),
-        textfont=dict(color="#fff"),
-    ))
-    donut_fig.update_layout(**chart_layout("Risk Tier Breakdown"))
+    def a_layout(title):
+        return dict(
+            title=dict(text=title, font=dict(color=A_TEXT, size=13), x=0.02),
+            paper_bgcolor=A_PAPER,
+            plot_bgcolor=A_BG,
+            font=dict(color=A_TEXT, size=11),
+            margin=dict(l=40, r=16, t=40, b=40),
+            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10, color=A_TEXT)),
+            xaxis=dict(gridcolor=A_GRID, zerolinecolor=A_GRID, color=A_TEXT),
+            yaxis=dict(gridcolor=A_GRID, zerolinecolor=A_GRID, color=A_TEXT),
+        )
 
-    # Chart 3: Seasonal pattern
-    monthly = df.groupby(df["date"].dt.month).size().reindex(range(1, 13), fill_value=0)
-    month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-    monthly_fig = go.Figure(go.Bar(x=month_names, y=monthly.values, marker_color="#3498db"))
-    monthly_fig.update_layout(**chart_layout("Permits by Month (Seasonal Pattern)"),
-                              xaxis=dict(title="Month", gridcolor=AXIS_COLOR),
-                              yaxis=dict(title="Count", gridcolor=AXIS_COLOR))
-
-    # Chart 4: Top permit types by HIGH risk count
-    top_types = (
-        df[df["risk_class"] == "HIGH"].groupby("permit_type").size()
-        .sort_values(ascending=True).tail(10)
+    # --- Rolling 12-month development pace ---
+    monthly_counts = (
+        df.groupby(df["date"].dt.to_period("M")).size()
+        .reset_index(name="count")
     )
-    top_fig = go.Figure(go.Bar(
-        x=top_types.values, y=top_types.index, orientation="h", marker_color="#e74c3c",
+    monthly_counts["month_dt"] = monthly_counts["date"].dt.to_timestamp()
+    monthly_counts = monthly_counts.sort_values("month_dt")
+    monthly_counts["rolling_12"] = monthly_counts["count"].rolling(12, min_periods=1).sum()
+
+    rolling_fig = go.Figure()
+    rolling_fig.add_trace(go.Scatter(
+        x=monthly_counts["month_dt"], y=monthly_counts["rolling_12"],
+        mode="lines", line=dict(color=A_ORANGE, width=2.5),
+        fill="tozeroy", fillcolor="rgba(204,85,0,0.12)",
+        name="12-mo rolling total",
     ))
-    top_fig.update_layout(**chart_layout("Top HIGH Risk Permit Types"),
-                          xaxis=dict(title="Count", gridcolor=AXIS_COLOR),
-                          yaxis=dict(gridcolor=AXIS_COLOR),
-                          margin=dict(l=160, r=16, t=40, b=40))
+    rl = a_layout("Development Pace — Rolling 12-Month Permit Volume")
+    rl["yaxis"]["title"] = "Permits (12-mo total)"
+    rolling_fig.update_layout(**rl)
+
+    # --- HIGH risk permits by year (grading + new construction = mosquito signal) ---
+    high_yearly = (
+        df[df["risk_class"] == "HIGH"]
+        .groupby(df["date"].dt.year).size()
+        .reset_index(name="count")
+    )
+    high_yearly.columns = ["year", "count"]
+    high_fig = go.Figure(go.Bar(
+        x=high_yearly["year"], y=high_yearly["count"],
+        marker_color=A_ORANGE, marker_line_width=0,
+    ))
+    hl = a_layout("HIGH Risk Permits by Year  (Grading & New Construction)")
+    hl["xaxis"]["title"] = "Year"
+    hl["xaxis"]["dtick"] = 1
+    hl["yaxis"]["title"] = "Count"
+    high_fig.update_layout(**hl)
+
+    # --- Growth hotspot map ---
+    # 0.02° grid cells ≈ 2 km; compare recent 2 years vs prior 2 years
+    recent_cutoff = df["date"].max() - pd.DateOffset(years=2)
+    prior_start   = recent_cutoff - pd.DateOffset(years=2)
+
+    df_g = df.copy()
+    df_g["cell_lat"] = (df_g["lat"] / 0.02).round() * 0.02
+    df_g["cell_lon"] = (df_g["lon"] / 0.02).round() * 0.02
+
+    recent_cnt = (
+        df_g[df_g["date"] >= recent_cutoff]
+        .groupby(["cell_lat", "cell_lon"]).size().reset_index(name="recent")
+    )
+    prior_cnt = (
+        df_g[(df_g["date"] >= prior_start) & (df_g["date"] < recent_cutoff)]
+        .groupby(["cell_lat", "cell_lon"]).size().reset_index(name="prior")
+    )
+    hotspots = recent_cnt.merge(prior_cnt, on=["cell_lat", "cell_lon"], how="left")
+    hotspots["prior"] = hotspots["prior"].fillna(0)
+    hotspots["growth_pct"] = (
+        (hotspots["recent"] - hotspots["prior"]) / (hotspots["prior"] + 1) * 100
+    ).round(0)
+    hotspots = hotspots[hotspots["recent"] >= 10].sort_values("recent", ascending=False)
+
+    hotspot_fig = go.Figure(go.Scattermap(
+        lat=hotspots["cell_lat"],
+        lon=hotspots["cell_lon"],
+        mode="markers",
+        marker=dict(
+            size=(hotspots["recent"] / hotspots["recent"].max() * 38 + 10),
+            color=hotspots["growth_pct"],
+            colorscale=[[0, A_YELLOW], [0.45, A_AMBER], [1, A_ORANGE]],
+            cmin=-30, cmax=120,
+            showscale=True,
+            colorbar=dict(
+                title=dict(text="Growth %", font=dict(color=A_TEXT)),
+                thickness=12, len=0.7,
+                tickfont=dict(color=A_TEXT),
+                bgcolor=A_PAPER,
+                bordercolor=A_GRID,
+            ),
+            opacity=0.85,
+        ),
+        text=hotspots.apply(
+            lambda r: (
+                f"<b>Recent permits (2 yr): {int(r.recent)}</b><br>"
+                f"Prior period: {int(r.prior)}<br>"
+                f"Growth: {'+' if r.growth_pct >= 0 else ''}{int(r.growth_pct)}%"
+            ),
+            axis=1,
+        ),
+        hoverinfo="text",
+    ))
+    hotspot_fig.update_layout(
+        map=dict(style="open-street-map", center=dict(lat=37.09, lon=-113.57), zoom=10),
+        margin=dict(l=0, r=0, t=36, b=0),
+        paper_bgcolor=A_PAPER,
+        title=dict(
+            text="Rapidly Developing Areas  —  bubble size = recent permit volume  |  color = growth vs prior 2 years",
+            font=dict(color=A_TEXT, size=11), x=0.01,
+        ),
+    )
+
+    # --- Top permit types last 2 years ---
+    recent_types = (
+        df[df["date"] >= recent_cutoff]["permit_type"]
+        .value_counts().head(10)
+        .sort_values(ascending=True)
+    )
+    type_fig = go.Figure(go.Bar(
+        x=recent_types.values, y=recent_types.index,
+        orientation="h",
+        marker=dict(
+            color=recent_types.values,
+            colorscale=[[0, A_YELLOW], [1, A_ORANGE]],
+            showscale=False,
+        ),
+    ))
+    tl = a_layout("Top Permit Types — Last 2 Years")
+    tl["xaxis"]["title"] = "Count"
+    tl["margin"] = dict(l=220, r=16, t=40, b=40)
+    type_fig.update_layout(**tl)
 
     content = html.Div(
-        style={"padding": "16px 24px"},
+        style={"padding": "16px 24px", "backgroundColor": A_PAPER},
         children=[
+            dcc.Graph(figure=rolling_fig, style={"height": "210px", "marginBottom": "12px"}),
             html.Div(
-                style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "12px"},
+                style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "12px",
+                       "marginBottom": "16px"},
                 children=[
-                    dcc.Graph(figure=yearly_fig, style={"height": "280px"}),
-                    dcc.Graph(figure=donut_fig, style={"height": "280px"}),
-                    dcc.Graph(figure=monthly_fig, style={"height": "280px"}),
-                    dcc.Graph(figure=top_fig, style={"height": "280px"}),
+                    dcc.Graph(figure=high_fig, style={"height": "280px"}),
+                    dcc.Graph(figure=type_fig, style={"height": "280px"}),
                 ],
             ),
+            dcc.Graph(figure=hotspot_fig, style={"height": "420px"}),
         ],
     )
     return content, cards
