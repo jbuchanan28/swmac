@@ -17,48 +17,94 @@ CACHE_PATH  = Path(__file__).parent.parent / "data" / "trap_data_clean.csv"
 
 YEAR_SHEETS = ["2016","2017","2018","2019","2020","2021","2022","2023","2024","2025"]
 
-# Approximate area-center coordinates keyed by site-code prefix (uppercase)
+# Per-site coordinates extracted from 2025 Mosquito Distribution Chart
+# (location names matched to site codes from the official SWMAC sheet photo)
+SITE_COORDS = {
+    # St. George (SGE)
+    "SGE002":   (37.0977, -113.5685),   # Dr. Free Clinic
+    "SGE003":   (37.1177, -113.5582),   # Springs Park
+    "SGE003-2": (37.1160, -113.5560),   # Springs River
+    "SGE007":   (37.0850, -113.5650),   # Halfway Wash
+    "SGE008-2": (37.1430, -113.5250),   # Ft. Pierce North
+    "SGE009":   (37.0900, -113.6200),   # Radio Towers
+    "SGE009-2": (37.0880, -113.6220),   # Radio Towers 2
+    "SGE013":   (37.1350, -113.5780),   # North Dixie Dr.
+    "SGE014":   (37.0920, -113.5820),   # Nature Park
+    "SGE015":   (37.0750, -113.5200),   # Little Valley
+    "SGE017":   (37.1350, -113.6050),   # Middleton
+    "SGE018":   (37.0700, -113.5350),   # Sunriver
+    "SGE036":   (37.1200, -113.5600),   # Rio Virgin Estates
+    # Washington City (WAS)
+    "WAS001":   (37.1290, -113.5050),   # Animal Shelter
+    "WAS002":   (37.1350, -113.5150),   # PV Estates
+    "WAS005":   (37.1400, -113.4900),   # Green Springs
+    "WAS006":   (37.1300, -113.4800),   # East Boiler
+    "WAS008":   (37.1500, -113.4700),   # Landfill Rd.
+    "WAS009":   (37.1250, -113.5700),   # Diversion Dam
+    "WAS011":   (37.1000, -113.4800),   # Prison Wash
+    # Hurricane (HUR)
+    "HUR007":   (37.1720, -113.3100),   # End Of Road
+    "HUR008":   (37.1750, -113.3000),   # Tractor Supply
+    "HUR009":   (37.1600, -113.2950),   # Prob. Area 3000 S.
+    # Santa Clara (SCL)
+    "SCL001":   (37.1370, -113.6530),   # Arboretum
+    "SCL004":   (37.1490, -113.6600),   # Lava Flow Wash
+    "SCL005":   (37.1400, -113.6500),   # Santa Clara River
+    # Ivins (IVI)
+    "IVI003":   (37.1680, -113.6860),   # Fire Lake
+    # Leeds (LEE)
+    "LEE003":   (37.2300, -113.3600),   # Jackson Rd.
+    # LaVerkin (LAV)
+    "LAV001":   (37.1970, -113.2740),   # Confluence Park
+    # Toquerville (TOQ)
+    "TOQ002":   (37.2430, -113.2970),   # Toquerville Park
+    # Virgin (VIR)
+    "VIR008":   (37.2020, -113.2540),   # Sierra Bella
+    # Outlying areas
+    "APV001":   (37.1350, -113.1280),   # Apple Valley
+    "ENT003":   (37.5680, -113.7220),   # Enterprise
+    "HIL002":   (37.0010, -112.9960),   # Hildale
+    "NHA002":   (37.4850, -113.3200),   # New Harmony
+    "NHA003":   (37.4860, -113.3210),   # New Harmony
+    "NHA004":   (37.4870, -113.3220),   # New Harmony
+    "ROC002":   (37.1680, -113.3500),   # Rockville
+    "ROC003":   (37.1690, -113.3510),   # Rockville
+    "ROC004":   (37.1700, -113.3520),   # Rockville
+    "SPR002":   (37.1880, -113.3270),   # Springdale
+}
+
+# Fallback: area-center coordinates keyed by site-code prefix
 AREA_COORDS = {
-    "SGE": (37.1041, -113.5841),   # St. George
-    "SCL": (37.1340, -113.6541),   # Santa Clara
-    "IVI": (37.1649, -113.6794),   # Ivins
-    "WAS": (37.1301, -113.5085),   # Washington City
-    "LEE": (37.2394, -113.3603),   # Leeds
-    "HAR": (37.1753, -113.2892),   # Hurricane
-    "HUR": (37.1753, -113.2892),   # Hurricane (alt code)
-    "LAV": (37.2029, -113.2734),   # LaVerkin
-    "TOQ": (37.2437, -113.3014),   # Toquerville
-    "VIR": (37.2167, -113.2500),   # Virgin
-    "ROC": (37.1665, -113.3503),   # Rockville
-    "SPR": (37.1887, -113.3273),   # Springdale
-    "APV": (37.1357, -113.1269),   # Apple Valley
-    "AEG": (37.1357, -113.1269),   # Apple Valley / Greendale
-    "ENT": (37.5727, -113.7229),   # Enterprise
-    "NHA": (37.4960, -113.3168),   # New Harmony
-    "HIL": (37.0013, -112.9979),   # Hildale
-    "AVA": (37.1000, -113.5500),   # Avalon (approximate)
-    "SR":  (37.1041, -113.5841),   # Special Research (St. George area)
+    "SGE": (37.1041, -113.5841),
+    "SCL": (37.1340, -113.6541),
+    "IVI": (37.1649, -113.6794),
+    "WAS": (37.1301, -113.5085),
+    "LEE": (37.2394, -113.3603),
+    "HAR": (37.1753, -113.2892),
+    "HUR": (37.1753, -113.2892),
+    "LAV": (37.2029, -113.2734),
+    "TOQ": (37.2437, -113.3014),
+    "VIR": (37.2167, -113.2500),
+    "ROC": (37.1665, -113.3503),
+    "SPR": (37.1887, -113.3273),
+    "APV": (37.1357, -113.1269),
+    "AEG": (37.1357, -113.1269),
+    "ENT": (37.5727, -113.7229),
+    "NHA": (37.4960, -113.3168),
+    "HIL": (37.0013, -112.9979),
+    "SR":  (37.1041, -113.5841),
 }
 
 AREA_NAMES = {
-    "SGE": "St. George",
-    "SCL": "Santa Clara",
-    "IVI": "Ivins",
-    "WAS": "Washington City",
-    "LEE": "Leeds",
-    "HAR": "Hurricane",
-    "HUR": "Hurricane",
-    "LAV": "LaVerkin",
-    "TOQ": "Toquerville",
-    "VIR": "Virgin",
-    "ROC": "Rockville",
-    "SPR": "Springdale",
-    "APV": "Apple Valley",
-    "AEG": "Apple Valley / Greendale",
-    "ENT": "Enterprise",
-    "NHA": "New Harmony",
-    "HIL": "Hildale",
-    "SR":  "St. George (Research)",
+    "SGE": "St. George",   "SCL": "Santa Clara",
+    "IVI": "Ivins",        "WAS": "Washington City",
+    "LEE": "Leeds",        "HAR": "Hurricane",
+    "HUR": "Hurricane",    "LAV": "LaVerkin",
+    "TOQ": "Toquerville",  "VIR": "Virgin",
+    "ROC": "Rockville",    "SPR": "Springdale",
+    "APV": "Apple Valley", "AEG": "Apple Valley / Greendale",
+    "ENT": "Enterprise",   "NHA": "New Harmony",
+    "HIL": "Hildale",      "SR":  "St. George (Research)",
 }
 
 # Columns that are consistent across all years
@@ -90,6 +136,15 @@ def _site_prefix(site_str):
 
 
 def _coords(site_str):
+    """Return (lat, lon) — exact site coords first, then area-center fallback."""
+    if not isinstance(site_str, str):
+        return (None, None)
+    key = site_str.strip().upper()
+    # Try exact site match (case-insensitive key)
+    for k, v in SITE_COORDS.items():
+        if k.upper() == key:
+            return v
+    # Prefix fallback
     prefix = _site_prefix(site_str)
     if prefix and prefix in AREA_COORDS:
         return AREA_COORDS[prefix]
