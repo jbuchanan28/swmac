@@ -71,10 +71,8 @@ max_year = df_full["date"].dt.year.max()
 
 # Load trap surveillance data
 try:
-    from trap_data import site_summary
-    trap_df   = pd.read_csv(DATA_DIR / "trap_data_clean.csv", parse_dates=["date"])
-    trap_sites = site_summary(trap_df)
-    trap_sites = trap_sites[trap_sites["lat"].notna() & trap_sites["lon"].notna()]
+    trap_df    = pd.read_csv(DATA_DIR / "trap_data_clean.csv", parse_dates=["date"])
+    trap_sites = pd.read_csv(DATA_DIR / "trap_sites_summary.csv", parse_dates=["last_active", "first_active"])
 except Exception as _e:
     print(f"[warn] trap data unavailable: {_e}")
     trap_df    = pd.DataFrame()
