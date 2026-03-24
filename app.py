@@ -140,11 +140,9 @@ app.layout = html.Div(
             children=[
                 dcc.Tab(label="Map & GIS", value="map",
                         style=TAB_STYLE, selected_style=TAB_SELECTED_STYLE),
-                dcc.Tab(label="Analytics", value="analytics",
-                        style=TAB_STYLE, selected_style=TAB_SELECTED_STYLE),
                 dcc.Tab(label="Forecast Model", value="forecast",
                         style=TAB_STYLE, selected_style=TAB_SELECTED_STYLE),
-                dcc.Tab(label="Model Insights", value="insights",
+                dcc.Tab(label="Analytics", value="analytics",
                         style=TAB_STYLE, selected_style=TAB_SELECTED_STYLE),
             ],
         ),
@@ -621,37 +619,27 @@ def update_dashboard(tab, tiers, classes, year_range):
                 ),
             ],
         )
-        return content, cards
 
-    # ── MODEL INSIGHTS TAB ───────────────────────────────────────────
-    if tab == "insights":
-        I_PAPER  = "#FFF8EE"
-        I_BG     = "#FFFDF7"
-        I_TEXT   = "#3D2B1F"
-        I_GRID   = "#DDD0BE"
-        I_ORANGE = "#CC5500"
-        I_AMBER  = "#F5A623"
-        I_YELLOW = "#FFD166"
-        I_BLUE   = "#2C7BB6"
-        I_MUTED  = "#7A5C3F"
+        # ── MODEL INSIGHTS (appended to bottom of forecast tab) ──────
+        I_MUTED = "#7A5C3F"
 
         def i_layout(title):
             return dict(
-                title=dict(text=title, font=dict(color=I_TEXT, size=12), x=0.02),
-                paper_bgcolor=I_PAPER, plot_bgcolor=I_BG,
-                font=dict(color=I_TEXT, size=10),
+                title=dict(text=title, font=dict(color=F_TEXT, size=12), x=0.02),
+                paper_bgcolor=F_PAPER, plot_bgcolor=F_BG,
+                font=dict(color=F_TEXT, size=10),
                 margin=dict(l=44, r=12, t=36, b=36),
-                legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=9, color=I_TEXT)),
-                xaxis=dict(gridcolor=I_GRID, zerolinecolor=I_GRID, color=I_TEXT),
-                yaxis=dict(gridcolor=I_GRID, zerolinecolor=I_GRID, color=I_TEXT),
+                legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=9, color=F_TEXT)),
+                xaxis=dict(gridcolor=F_GRID, zerolinecolor=F_GRID, color=F_TEXT),
+                yaxis=dict(gridcolor=F_GRID, zerolinecolor=F_GRID, color=F_TEXT),
             )
 
         def insight_card(title, body, border_color=None):
             return html.Div(
                 style={
-                    "backgroundColor": I_PAPER,
-                    "border": f"1px solid {I_GRID}",
-                    "borderLeft": f"4px solid {border_color or I_ORANGE}",
+                    "backgroundColor": F_PAPER,
+                    "border": f"1px solid {F_GRID}",
+                    "borderLeft": f"4px solid {border_color or F_ORANGE}",
                     "borderRadius": "6px",
                     "padding": "14px 18px",
                     "display": "flex",
@@ -659,331 +647,199 @@ def update_dashboard(tab, tiers, classes, year_range):
                     "justifyContent": "center",
                 },
                 children=[
-                    html.H4(title, style={"color": I_TEXT, "margin": "0 0 7px",
+                    html.H4(title, style={"color": F_TEXT, "margin": "0 0 7px",
                                           "fontSize": "13px", "fontWeight": "bold"}),
                     html.P(body, style={"color": I_MUTED, "fontSize": "12px",
                                         "lineHeight": "1.6", "margin": 0}),
                 ],
             )
 
-        def row(card, graph):
+        def irow(card, graph):
             return html.Div(
                 style={"display": "grid", "gridTemplateColumns": "1fr 2fr",
                        "gap": "14px", "marginBottom": "16px", "alignItems": "stretch"},
                 children=[card, graph],
             )
 
-        weekly = mosq_df.groupby("Week_Start", as_index=False).agg({
-            "Mosq_Count": "sum",
-            "DailyAverageDryBulbTemperature": "mean",
-            "DailyPrecipitation": "mean",
-            "DailyAverageRelativeHumidity": "mean",
-            "DailyAverageWindSpeed": "mean",
-            "Risk_Level": "mean",
-        }).sort_values("Week_Start")
-
-        # --- Scatter: Temperature ---
+        # Scatter charts
         temp_scatter = go.Figure(go.Scatter(
             x=mosq_df["DailyAverageDryBulbTemperature"], y=mosq_df["Mosq_Count"],
-            mode="markers", marker=dict(color=I_ORANGE, opacity=0.3, size=4),
+            mode="markers", marker=dict(color=F_ORANGE, opacity=0.3, size=4),
         ))
-        ts = i_layout("Temperature (°F) vs Mosquito Count")
-        ts["xaxis"]["title"] = "Avg Temperature (°F)"
-        ts["yaxis"]["title"] = "Mosquito Count"
-        temp_scatter.update_layout(**ts)
+        _tsl = i_layout("Temperature (°F) vs Mosquito Count")
+        _tsl["xaxis"]["title"] = "Avg Temperature (°F)"
+        _tsl["yaxis"]["title"] = "Mosquito Count"
+        temp_scatter.update_layout(**_tsl)
 
-        # --- Scatter: Precipitation ---
         precip_scatter = go.Figure(go.Scatter(
             x=mosq_df["DailyPrecipitation"], y=mosq_df["Mosq_Count"],
-            mode="markers", marker=dict(color=I_BLUE, opacity=0.3, size=4),
+            mode="markers", marker=dict(color=F_BLUE, opacity=0.3, size=4),
         ))
-        ps = i_layout("Precipitation vs Mosquito Count")
-        ps["xaxis"]["title"] = "Precipitation (in)"
-        ps["yaxis"]["title"] = "Mosquito Count"
-        precip_scatter.update_layout(**ps)
+        _psl = i_layout("Precipitation vs Mosquito Count")
+        _psl["xaxis"]["title"] = "Precipitation (in)"
+        _psl["yaxis"]["title"] = "Mosquito Count"
+        precip_scatter.update_layout(**_psl)
 
-        # --- Scatter: Humidity ---
         humid_scatter = go.Figure(go.Scatter(
             x=mosq_df["DailyAverageRelativeHumidity"], y=mosq_df["Mosq_Count"],
-            mode="markers", marker=dict(color=I_AMBER, opacity=0.3, size=4),
+            mode="markers", marker=dict(color=F_AMBER, opacity=0.3, size=4),
         ))
-        hs = i_layout("Humidity (%) vs Mosquito Count")
-        hs["xaxis"]["title"] = "Relative Humidity (%)"
-        hs["yaxis"]["title"] = "Mosquito Count"
-        humid_scatter.update_layout(**hs)
+        _hsl = i_layout("Humidity (%) vs Mosquito Count")
+        _hsl["xaxis"]["title"] = "Relative Humidity (%)"
+        _hsl["yaxis"]["title"] = "Mosquito Count"
+        humid_scatter.update_layout(**_hsl)
 
-        # --- Scatter: Wind ---
         wind_scatter = go.Figure(go.Scatter(
             x=mosq_df["DailyAverageWindSpeed"], y=mosq_df["Mosq_Count"],
             mode="markers", marker=dict(color="#6C8EBF", opacity=0.3, size=4),
         ))
-        ws = i_layout("Wind Speed vs Mosquito Count")
-        ws["xaxis"]["title"] = "Avg Wind Speed (mph)"
-        ws["yaxis"]["title"] = "Mosquito Count"
-        wind_scatter.update_layout(**ws)
+        _wsl = i_layout("Wind Speed vs Mosquito Count")
+        _wsl["xaxis"]["title"] = "Avg Wind Speed (mph)"
+        _wsl["yaxis"]["title"] = "Mosquito Count"
+        wind_scatter.update_layout(**_wsl)
 
-        # --- Time series: Mosq + Temp ---
-        ts_temp = make_subplots(specs=[[{"secondary_y": True}]])
-        ts_temp.add_trace(go.Bar(x=weekly["Week_Start"], y=weekly["Mosq_Count"],
-            name="Mosquito Count", marker_color=I_ORANGE, opacity=0.65), secondary_y=False)
-        ts_temp.add_trace(go.Scatter(x=weekly["Week_Start"],
-            y=weekly["DailyAverageDryBulbTemperature"], name="Temp (°F)",
-            mode="lines", line=dict(color=I_BLUE, width=1.8)), secondary_y=True)
-        ts_temp.update_layout(
-            paper_bgcolor=I_PAPER, plot_bgcolor=I_BG, font=dict(color=I_TEXT, size=10),
-            margin=dict(l=44, r=44, t=36, b=36),
-            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=9, color=I_TEXT)),
-            xaxis=dict(gridcolor=I_GRID, color=I_TEXT),
-            yaxis=dict(title="Mosquito Count", gridcolor=I_GRID, color=I_TEXT),
-            yaxis2=dict(title="Temp (°F)", color=I_BLUE, showgrid=False),
-            title=dict(text="Mosquito Count + Temperature Over Time",
-                       font=dict(color=I_TEXT, size=12), x=0.02),
-        )
+        def dual_ts(y2_col, y2_title, y2_color, title):
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            fig.add_trace(go.Bar(x=weekly["Week_Start"], y=weekly["Mosq_Count"],
+                name="Mosquito Count", marker_color=F_ORANGE, opacity=0.65), secondary_y=False)
+            fig.add_trace(go.Scatter(x=weekly["Week_Start"], y=weekly[y2_col],
+                name=y2_title, mode="lines", line=dict(color=y2_color, width=1.8)),
+                secondary_y=True)
+            fig.update_layout(
+                paper_bgcolor=F_PAPER, plot_bgcolor=F_BG, font=dict(color=F_TEXT, size=10),
+                margin=dict(l=44, r=44, t=36, b=36),
+                legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=9, color=F_TEXT)),
+                xaxis=dict(gridcolor=F_GRID, color=F_TEXT),
+                yaxis=dict(title="Mosquito Count", gridcolor=F_GRID, color=F_TEXT),
+                yaxis2=dict(title=y2_title, color=y2_color, showgrid=False),
+                title=dict(text=title, font=dict(color=F_TEXT, size=12), x=0.02),
+            )
+            return fig
 
-        # --- Time series: Mosq + Precip ---
-        ts_precip = make_subplots(specs=[[{"secondary_y": True}]])
-        ts_precip.add_trace(go.Bar(x=weekly["Week_Start"], y=weekly["Mosq_Count"],
-            name="Mosquito Count", marker_color=I_ORANGE, opacity=0.65), secondary_y=False)
-        ts_precip.add_trace(go.Scatter(x=weekly["Week_Start"],
-            y=weekly["DailyPrecipitation"], name="Precipitation",
-            mode="lines", line=dict(color=I_BLUE, width=1.8)), secondary_y=True)
-        ts_precip.update_layout(
-            paper_bgcolor=I_PAPER, plot_bgcolor=I_BG, font=dict(color=I_TEXT, size=10),
-            margin=dict(l=44, r=44, t=36, b=36),
-            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=9, color=I_TEXT)),
-            xaxis=dict(gridcolor=I_GRID, color=I_TEXT),
-            yaxis=dict(title="Mosquito Count", gridcolor=I_GRID, color=I_TEXT),
-            yaxis2=dict(title="Precipitation (in)", color=I_BLUE, showgrid=False),
-            title=dict(text="Mosquito Count + Precipitation Over Time",
-                       font=dict(color=I_TEXT, size=12), x=0.02),
-        )
+        ts_temp   = dual_ts("DailyAverageDryBulbTemperature", "Temp (°F)",        F_BLUE,    "Mosquito Count + Temperature Over Time")
+        ts_precip = dual_ts("DailyPrecipitation",              "Precipitation",    F_BLUE,    "Mosquito Count + Precipitation Over Time")
+        ts_humid  = dual_ts("DailyAverageRelativeHumidity",    "Humidity (%)",     F_AMBER,   "Mosquito Count + Humidity Over Time")
+        ts_wind   = dual_ts("DailyAverageWindSpeed",           "Wind Speed (mph)", "#6C8EBF", "Mosquito Count + Wind Speed Over Time")
 
-        # --- Time series: Mosq + Humidity ---
-        ts_humid = make_subplots(specs=[[{"secondary_y": True}]])
-        ts_humid.add_trace(go.Bar(x=weekly["Week_Start"], y=weekly["Mosq_Count"],
-            name="Mosquito Count", marker_color=I_ORANGE, opacity=0.65), secondary_y=False)
-        ts_humid.add_trace(go.Scatter(x=weekly["Week_Start"],
-            y=weekly["DailyAverageRelativeHumidity"], name="Humidity (%)",
-            mode="lines", line=dict(color=I_AMBER, width=1.8)), secondary_y=True)
-        ts_humid.update_layout(
-            paper_bgcolor=I_PAPER, plot_bgcolor=I_BG, font=dict(color=I_TEXT, size=10),
-            margin=dict(l=44, r=44, t=36, b=36),
-            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=9, color=I_TEXT)),
-            xaxis=dict(gridcolor=I_GRID, color=I_TEXT),
-            yaxis=dict(title="Mosquito Count", gridcolor=I_GRID, color=I_TEXT),
-            yaxis2=dict(title="Humidity (%)", color=I_AMBER, showgrid=False),
-            title=dict(text="Mosquito Count + Humidity Over Time",
-                       font=dict(color=I_TEXT, size=12), x=0.02),
-        )
-
-        # --- Time series: Mosq + Wind ---
-        ts_wind = make_subplots(specs=[[{"secondary_y": True}]])
-        ts_wind.add_trace(go.Bar(x=weekly["Week_Start"], y=weekly["Mosq_Count"],
-            name="Mosquito Count", marker_color=I_ORANGE, opacity=0.65), secondary_y=False)
-        ts_wind.add_trace(go.Scatter(x=weekly["Week_Start"],
-            y=weekly["DailyAverageWindSpeed"], name="Wind Speed",
-            mode="lines", line=dict(color="#6C8EBF", width=1.8)), secondary_y=True)
-        ts_wind.update_layout(
-            paper_bgcolor=I_PAPER, plot_bgcolor=I_BG, font=dict(color=I_TEXT, size=10),
-            margin=dict(l=44, r=44, t=36, b=36),
-            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=9, color=I_TEXT)),
-            xaxis=dict(gridcolor=I_GRID, color=I_TEXT),
-            yaxis=dict(title="Mosquito Count", gridcolor=I_GRID, color=I_TEXT),
-            yaxis2=dict(title="Wind Speed (mph)", color="#6C8EBF", showgrid=False),
-            title=dict(text="Mosquito Count + Wind Speed Over Time",
-                       font=dict(color=I_TEXT, size=12), x=0.02),
-        )
-
-        # --- Risk level distribution ---
         risk_dist = mosq_df["Risk_Level"].value_counts().sort_index()
-        risk_colors = [I_YELLOW, I_YELLOW, I_AMBER, I_AMBER, I_AMBER,
-                       I_ORANGE, I_ORANGE, "#AA3300", "#880000", "#660000"]
         risk_bar = go.Figure(go.Bar(
             x=risk_dist.index, y=risk_dist.values,
-            marker_color=risk_colors[:len(risk_dist)],
+            marker_color=[F_YELLOW, F_YELLOW, F_AMBER, F_AMBER, F_AMBER,
+                          F_ORANGE, F_ORANGE, "#AA3300", "#880000", "#660000"][:len(risk_dist)],
             text=risk_dist.values, textposition="outside",
-            textfont=dict(color=I_TEXT, size=10),
+            textfont=dict(color=F_TEXT, size=10),
         ))
-        rb = i_layout("Risk Level Distribution (1–10)")
-        rb["xaxis"]["title"] = "Risk Level"
-        rb["xaxis"]["dtick"] = 1
-        rb["yaxis"]["title"] = "# Trap Readings"
-        risk_bar.update_layout(**rb)
+        _rb = i_layout("Risk Level Distribution (1–10)")
+        _rb["xaxis"]["title"] = "Risk Level"
+        _rb["xaxis"]["dtick"] = 1
+        _rb["yaxis"]["title"] = "# Trap Readings"
+        risk_bar.update_layout(**_rb)
 
-        content = html.Div(
-            style={"padding": "20px 28px", "backgroundColor": I_PAPER},
-            children=[
-                # Header
-                html.Div(
-                    style={"marginBottom": "20px", "borderBottom": f"2px solid {I_ORANGE}",
-                           "paddingBottom": "14px"},
-                    children=[
-                        html.H2("Mosquito Population Modeling",
-                                style={"color": I_TEXT, "margin": "0 0 6px", "fontSize": "18px"}),
-                        html.P(
-                            "Correlating historical weather data with SWMAC trap counts "
-                            "(2023–2025) to identify which environmental conditions drive mosquito population booms. "
-                            "All models use weekly aggregated data across St. George trap sites.",
-                            style={"color": I_MUTED, "fontSize": "13px", "margin": 0, "lineHeight": "1.6"},
-                        ),
-                    ],
-                ),
+        insights_section = [
+            html.Hr(style={"border": "none", "borderTop": f"2px solid {F_GRID}", "margin": "28px 0 20px"}),
+            html.Div(
+                style={"marginBottom": "20px", "borderBottom": f"2px solid {F_ORANGE}", "paddingBottom": "14px"},
+                children=[
+                    html.H2("Model Insights", style={"color": F_TEXT, "margin": "0 0 6px", "fontSize": "18px"}),
+                    html.P(
+                        "Correlating historical weather data with SWMAC trap counts (2023–2025) to identify "
+                        "which environmental conditions drive mosquito population booms. "
+                        "All models use weekly aggregated data across St. George trap sites.",
+                        style={"color": I_MUTED, "fontSize": "13px", "margin": 0, "lineHeight": "1.6"},
+                    ),
+                ],
+            ),
+            html.H3("Regression Model Overview", style={"color": F_ORANGE, "fontSize": "14px", "margin": "0 0 10px"}),
+            html.Div(
+                style={"backgroundColor": F_PAPER, "border": f"1px solid {F_GRID}",
+                       "borderLeft": f"4px solid {F_ORANGE}", "borderRadius": "6px",
+                       "padding": "14px 20px", "marginBottom": "20px"},
+                children=[
+                    html.P(
+                        "An Ordinary Least Squares (OLS) regression was fit to predict weekly mosquito trap counts "
+                        "from four weather variables: temperature, precipitation, humidity, and wind speed. "
+                        "Temperature emerged as the only statistically significant predictor (p < 0.001), with a "
+                        f"coefficient of +{ols_model['coefficients']['DailyAverageDryBulbTemperature']:.3f} — "
+                        "meaning each additional degree of average temperature corresponds to roughly 0.72 more "
+                        "mosquitoes per trap per week.",
+                        style={"color": I_MUTED, "fontSize": "12px", "margin": "0 0 8px", "lineHeight": "1.7"},
+                    ),
+                    html.P(
+                        f"The model's R² of {ols_model['rsquared']:.4f} reflects that weather alone explains a modest "
+                        "portion of variance — other factors like standing water from construction activity, irrigation, "
+                        "and trap placement also play a large role. The value of this model is directional forecasting: "
+                        "as temperatures climb in spring, SWMAC can anticipate rising populations 2–4 weeks ahead.",
+                        style={"color": I_MUTED, "fontSize": "12px", "margin": 0, "lineHeight": "1.7"},
+                    ),
+                ],
+            ),
+            html.H3("Temperature", style={"color": F_ORANGE, "fontSize": "14px", "margin": "0 0 10px"}),
+            irow(insight_card("Strongest predictor (p < 0.001)",
+                "Temperature has the clearest and most consistent relationship with mosquito counts. "
+                "Populations surge during St. George's hot summers — trap counts regularly spike above "
+                "the historical mean when weekly averages exceed ~85°F. The scatter shows a wide spread "
+                "at higher temperatures, reflecting that heat is necessary but not sufficient on its own.", F_ORANGE),
+                dcc.Graph(figure=temp_scatter, style={"height": "260px"})),
+            irow(insight_card("Population timing follows temperature",
+                "The dual-axis time series shows mosquito peaks closely track temperature peaks across "
+                "2023–2025. The lag between temperature rise and population boom (roughly 2–4 weeks) "
+                "reflects egg-to-adult development time, giving SWMAC an actionable lead time for "
+                "larvicide deployment before adults emerge.", F_ORANGE),
+                dcc.Graph(figure=ts_temp, style={"height": "260px"})),
+            html.H3("Precipitation", style={"color": F_BLUE, "fontSize": "14px", "margin": "16px 0 10px"}),
+            irow(insight_card("Positive relationship, high variability",
+                "Precipitation shows a positive coefficient (+10.52) — rain events create temporary "
+                "standing water that serves as breeding habitat. However, the relationship is not "
+                "statistically significant, likely because St. George receives very little rainfall "
+                "overall and irrigation is a more consistent water source than precipitation.", F_BLUE),
+                dcc.Graph(figure=precip_scatter, style={"height": "260px"})),
+            irow(insight_card("Short-term spikes after rain events",
+                "Looking at the time series, brief rainfall events occasionally correspond with "
+                "short-term upticks in trap counts in subsequent weeks. These are most pronounced "
+                "during summer when temperatures are already high enough to accelerate larval "
+                "development in newly formed standing water.", F_BLUE),
+                dcc.Graph(figure=ts_precip, style={"height": "260px"})),
+            html.H3("Humidity", style={"color": F_AMBER, "fontSize": "14px", "margin": "16px 0 10px"}),
+            irow(insight_card("Slight negative coefficient in arid climate",
+                "Contrary to what one might expect, relative humidity shows a slight negative "
+                "coefficient (−0.11) in St. George — not statistically significant. In arid desert "
+                "climates, higher humidity often co-occurs with cooler or windy conditions, which "
+                "may suppress activity. The local irrigation-driven microclimate likely confounds "
+                "the broader humidity signal.", F_AMBER),
+                dcc.Graph(figure=humid_scatter, style={"height": "260px"})),
+            irow(insight_card("Humidity peaks inverse to mosquito season",
+                "Relative humidity in St. George tends to be highest in winter and during "
+                "monsoon season, while mosquito populations peak mid-summer during the driest "
+                "stretch. This inverse seasonal pattern helps explain why humidity does not "
+                "emerge as a positive predictor in this dataset.", F_AMBER),
+                dcc.Graph(figure=ts_humid, style={"height": "260px"})),
+            html.H3("Wind Speed", style={"color": "#6C8EBF", "fontSize": "14px", "margin": "16px 0 10px"}),
+            irow(insight_card("Minor positive effect, not significant",
+                "Wind speed carries a positive coefficient (+1.68) in the model but is not "
+                "statistically significant. Wind does not directly support mosquito breeding, "
+                "but higher wind readings in this dataset may be co-occurring with warm summer "
+                "weather patterns — making the coefficient a proxy for season rather than a "
+                "causal driver.", "#6C8EBF"),
+                dcc.Graph(figure=wind_scatter, style={"height": "260px"})),
+            irow(insight_card("No clear directional pattern in time series",
+                "Wind speed over 2023–2025 shows no consistent relationship with population "
+                "highs or lows in the time series. This reinforces that wind is not a primary "
+                "driver of mosquito activity in this region — temperature remains the dominant "
+                "environmental signal.", "#6C8EBF"),
+                dcc.Graph(figure=ts_wind, style={"height": "260px"})),
+            html.H3("Risk Classification (1–10 Scale)", style={"color": F_ORANGE, "fontSize": "14px", "margin": "16px 0 10px"}),
+            irow(insight_card("Z-score based risk levels",
+                "The 1–10 risk scale classifies each trap reading relative to the "
+                f"historical mean ({_mosq_mean:.0f} mosquitoes) and standard deviation ({_mosq_std:.0f}). "
+                "Level 5 represents counts near the mean. Levels 8–10 correspond to population "
+                "events exceeding 1.5–3 standard deviations above average — significant outbreaks "
+                "warranting immediate SWMAC response. The majority of readings fall at level 1 "
+                "(off-season, near-zero counts), which is expected given St. George's short "
+                "active mosquito season.", F_ORANGE),
+                dcc.Graph(figure=risk_bar, style={"height": "260px"})),
+        ]
 
-                # Section: OLS Overview
-                html.H3("Regression Model Overview",
-                        style={"color": I_ORANGE, "fontSize": "14px", "margin": "0 0 10px"}),
-                html.Div(
-                    style={"backgroundColor": I_PAPER, "border": f"1px solid {I_GRID}",
-                           "borderLeft": f"4px solid {I_ORANGE}", "borderRadius": "6px",
-                           "padding": "14px 20px", "marginBottom": "20px"},
-                    children=[
-                        html.P(
-                            "An Ordinary Least Squares (OLS) regression was fit to predict weekly mosquito trap counts "
-                            "from four weather variables: temperature, precipitation, humidity, and wind speed. "
-                            "Temperature emerged as the only statistically significant predictor (p < 0.001), with a "
-                            f"coefficient of +{ols_model['coefficients']['DailyAverageDryBulbTemperature']:.3f} — "
-                            "meaning each additional degree of average temperature corresponds to roughly 0.72 more "
-                            "mosquitoes per trap per week.",
-                            style={"color": I_MUTED, "fontSize": "12px", "margin": "0 0 8px",
-                                   "lineHeight": "1.7"},
-                        ),
-                        html.P(
-                            f"The model's R² of {ols_model['rsquared']:.4f} reflects that weather alone explains a modest "
-                            "portion of variance — other factors like standing water from construction activity, irrigation, "
-                            "and trap placement also play a large role. The value of this model is directional forecasting: "
-                            "as temperatures climb in spring, SWMAC can anticipate rising populations 2–4 weeks ahead.",
-                            style={"color": I_MUTED, "fontSize": "12px", "margin": 0,
-                                   "lineHeight": "1.7"},
-                        ),
-                    ],
-                ),
-
-                # Section: Temperature
-                html.H3("Temperature", style={"color": I_ORANGE, "fontSize": "14px",
-                                               "margin": "0 0 10px"}),
-                row(
-                    insight_card(
-                        "Strongest predictor (p < 0.001)",
-                        "Temperature has the clearest and most consistent relationship with mosquito counts. "
-                        "Populations surge during St. George's hot summers — trap counts regularly spike above "
-                        "the historical mean when weekly averages exceed ~85°F. The scatter shows a wide spread "
-                        "at higher temperatures, reflecting that heat is necessary but not sufficient on its own.",
-                        I_ORANGE,
-                    ),
-                    dcc.Graph(figure=temp_scatter, style={"height": "260px"}),
-                ),
-                row(
-                    insight_card(
-                        "Population timing follows temperature",
-                        "The dual-axis time series shows mosquito peaks closely track temperature peaks across "
-                        "2023–2025. The lag between temperature rise and population boom (roughly 2–4 weeks) "
-                        "reflects egg-to-adult development time, giving SWMAC an actionable lead time for "
-                        "larvicide deployment before adults emerge.",
-                        I_ORANGE,
-                    ),
-                    dcc.Graph(figure=ts_temp, style={"height": "260px"}),
-                ),
-
-                # Section: Precipitation
-                html.H3("Precipitation", style={"color": I_BLUE, "fontSize": "14px",
-                                                  "margin": "16px 0 10px"}),
-                row(
-                    insight_card(
-                        "Positive relationship, high variability",
-                        "Precipitation shows a positive coefficient (+10.52) — rain events create temporary "
-                        "standing water that serves as breeding habitat. However, the relationship is not "
-                        "statistically significant, likely because St. George receives very little rainfall "
-                        "overall and irrigation is a more consistent water source than precipitation.",
-                        I_BLUE,
-                    ),
-                    dcc.Graph(figure=precip_scatter, style={"height": "260px"}),
-                ),
-                row(
-                    insight_card(
-                        "Short-term spikes after rain events",
-                        "Looking at the time series, brief rainfall events occasionally correspond with "
-                        "short-term upticks in trap counts in subsequent weeks. These are most pronounced "
-                        "during summer when temperatures are already high enough to accelerate larval "
-                        "development in newly formed standing water.",
-                        I_BLUE,
-                    ),
-                    dcc.Graph(figure=ts_precip, style={"height": "260px"}),
-                ),
-
-                # Section: Humidity
-                html.H3("Humidity", style={"color": I_AMBER, "fontSize": "14px",
-                                            "margin": "16px 0 10px"}),
-                row(
-                    insight_card(
-                        "Slight negative coefficient in arid climate",
-                        "Contrary to what one might expect, relative humidity shows a slight negative "
-                        "coefficient (−0.11) in St. George — not statistically significant. In arid desert "
-                        "climates, higher humidity often co-occurs with cooler or windy conditions, which "
-                        "may suppress activity. The local irrigation-driven microclimate likely confounds "
-                        "the broader humidity signal.",
-                        I_AMBER,
-                    ),
-                    dcc.Graph(figure=humid_scatter, style={"height": "260px"}),
-                ),
-                row(
-                    insight_card(
-                        "Humidity peaks inverse to mosquito season",
-                        "Relative humidity in St. George tends to be highest in winter and during "
-                        "monsoon season, while mosquito populations peak mid-summer during the driest "
-                        "stretch. This inverse seasonal pattern helps explain why humidity does not "
-                        "emerge as a positive predictor in this dataset.",
-                        I_AMBER,
-                    ),
-                    dcc.Graph(figure=ts_humid, style={"height": "260px"}),
-                ),
-
-                # Section: Wind Speed
-                html.H3("Wind Speed", style={"color": "#6C8EBF", "fontSize": "14px",
-                                              "margin": "16px 0 10px"}),
-                row(
-                    insight_card(
-                        "Minor positive effect, not significant",
-                        "Wind speed carries a positive coefficient (+1.68) in the model but is not "
-                        "statistically significant. Wind does not directly support mosquito breeding, "
-                        "but higher wind readings in this dataset may be co-occurring with warm summer "
-                        "weather patterns — making the coefficient a proxy for season rather than a "
-                        "causal driver.",
-                        "#6C8EBF",
-                    ),
-                    dcc.Graph(figure=wind_scatter, style={"height": "260px"}),
-                ),
-                row(
-                    insight_card(
-                        "No clear directional pattern in time series",
-                        "Wind speed over 2023–2025 shows no consistent relationship with population "
-                        "highs or lows in the time series. This reinforces that wind is not a primary "
-                        "driver of mosquito activity in this region — temperature remains the dominant "
-                        "environmental signal.",
-                        "#6C8EBF",
-                    ),
-                    dcc.Graph(figure=ts_wind, style={"height": "260px"}),
-                ),
-
-                # Section: Risk Scale
-                html.H3("Risk Classification (1–10 Scale)",
-                        style={"color": I_ORANGE, "fontSize": "14px", "margin": "16px 0 10px"}),
-                row(
-                    insight_card(
-                        "Z-score based risk levels",
-                        "Garrett's 1–10 risk scale classifies each trap reading relative to the "
-                        f"historical mean ({_mosq_mean:.0f} mosquitoes) and standard deviation "
-                        f"({_mosq_std:.0f}). "
-                        "Level 5 represents counts near the mean. Levels 8–10 correspond to population "
-                        "events exceeding 1.5–3 standard deviations above average — significant outbreaks "
-                        "warranting immediate SWMAC response. The majority of readings fall at level 1 "
-                        "(off-season, near-zero counts), which is expected given St. George's short "
-                        "active mosquito season.",
-                        I_ORANGE,
-                    ),
-                    dcc.Graph(figure=risk_bar, style={"height": "260px"}),
-                ),
-            ],
-        )
+        content.children.extend(insights_section)
         return content, cards
 
 
