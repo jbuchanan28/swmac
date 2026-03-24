@@ -138,6 +138,21 @@ filters = html.Div(
                 step=1, tooltip={"placement": "bottom"},
             ),
         ], style={"width": "340px"}),
+        html.Div([
+            html.Label("Map Layers", style={"fontSize": "12px", "color": "#aaa", "display": "block", "marginBottom": "4px"}),
+            dcc.Checklist(
+                id="filter-layers",
+                options=[
+                    {"label": " Permit Risk", "value": "permits"},
+                    {"label": " Trap Sites", "value": "traps"},
+                ],
+                value=["permits", "traps"],
+                inline=True,
+                style={"color": "#ccc", "fontSize": "12px", "gap": "12px"},
+                inputStyle={"marginRight": "4px"},
+                labelStyle={"marginRight": "14px"},
+            ),
+        ]),
     ],
 )
 
@@ -197,8 +212,9 @@ app.layout = html.Div(
     Input("filter-tier", "value"),
     Input("filter-class", "value"),
     Input("filter-year", "value"),
+    Input("filter-layers", "value"),
 )
-def update_dashboard(tab, tiers, classes, year_range):
+def update_dashboard(tab, tiers, classes, year_range, layers):
     df = df_full.copy()
     if tiers:
         df = df[df["risk_tier"].isin(tiers)]
@@ -230,30 +246,35 @@ def update_dashboard(tab, tiers, classes, year_range):
     # ── MAP TAB ──────────────────────────────────────────────────────
     if tab == "map":
         map_fig = go.Figure()
-        map_fig.add_trace(go.Densitymap(
-            lat=df["lat"], lon=df["lon"], z=df["composite_score"],
-            radius=20,
-            colorscale=[[0, "rgba(0,255,0,0)"], [0.3, "rgba(255,255,0,0.5)"], [1, "rgba(255,0,0,0.8)"]],
-            showscale=False, name="Risk Heatmap", hoverinfo="skip",
-        ))
-        for tier in ["Monitor", "Larvicide", "Adulticide"]:
-            subset = df[df["risk_tier"] == tier]
-            if subset.empty:
-                continue
-            map_fig.add_trace(go.Scattermap(
-                lat=subset["lat"], lon=subset["lon"], mode="markers",
-                marker=dict(size=8, color=TIER_COLORS[tier], opacity=0.8),
-                name=tier,
-                text=subset.apply(
-                    lambda r: f"<b>{r.get('project_name','')}</b><br>{r.get('address','')}<br>"
-                              f"Score: {r.get('composite_score',0):.2f} — {r.get('risk_tier','')}",
-                    axis=1,
-                ),
-                hoverinfo="text",
+        show_permits = not layers or "permits" in (layers or [])
+        if show_permits:
+            map_fig.add_trace(go.Densitymap(
+                lat=df["lat"], lon=df["lon"], z=df["composite_score"],
+                radius=20,
+                colorscale=[[0, "rgba(0,255,0,0)"], [0.3, "rgba(255,255,0,0.5)"], [1, "rgba(255,0,0,0.8)"]],
+                showscale=False, name="Risk Heatmap", hoverinfo="skip",
             ))
+        show_traps   = "traps" in (layers or [])
+
+        if show_permits:
+            for tier in ["Monitor", "Larvicide", "Adulticide"]:
+                subset = df[df["risk_tier"] == tier]
+                if subset.empty:
+                    continue
+                map_fig.add_trace(go.Scattermap(
+                    lat=subset["lat"], lon=subset["lon"], mode="markers",
+                    marker=dict(size=8, color=TIER_COLORS[tier], opacity=0.8),
+                    name=tier,
+                    text=subset.apply(
+                        lambda r: f"<b>{r.get('project_name','')}</b><br>{r.get('address','')}<br>"
+                                  f"Score: {r.get('composite_score',0):.2f} — {r.get('risk_tier','')}",
+                        axis=1,
+                    ),
+                    hoverinfo="text",
+                ))
 
         # Trap site overlay — sized by total catch, colored by disease activity
-        if not trap_sites.empty:
+        if show_traps and not trap_sites.empty:
             max_catch = trap_sites["total_mosquitoes"].max()
             trap_sizes = (trap_sites["total_mosquitoes"] / max_catch * 28 + 8).clip(8, 36)
             trap_colors = trap_sites["any_positive"].map({True: "#cc0000", False: "#4a90d9"})
