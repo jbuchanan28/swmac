@@ -2,8 +2,10 @@
 SWMAC Mosquito Risk Dashboard - Dash web application for Render deployment.
 Reads from pre-processed CSV files in data/.
 """
+import json
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from dash import Dash, dcc, html, dash_table, Input, Output
 from pathlib import Path
 
@@ -44,6 +46,14 @@ server = app.server
 df_full = load_data()
 min_year = df_full["date"].dt.year.min()
 max_year = df_full["date"].dt.year.max()
+
+# Load mosquito model data
+mosq_df = pd.read_csv(DATA_DIR / "mosq_weather_merged.csv", parse_dates=["Week_Start"])
+with open(DATA_DIR / "ols_model.json") as _f:
+    ols_model = json.load(_f)
+_coef = ols_model["coefficients"]
+_mosq_mean = ols_model["mosq_mean"]
+_mosq_std  = ols_model["mosq_std"]
 
 TAB_STYLE = {
     "backgroundColor": "#1a1d2e",
@@ -131,6 +141,8 @@ app.layout = html.Div(
                 dcc.Tab(label="Map & GIS", value="map",
                         style=TAB_STYLE, selected_style=TAB_SELECTED_STYLE),
                 dcc.Tab(label="Analytics", value="analytics",
+                        style=TAB_STYLE, selected_style=TAB_SELECTED_STYLE),
+                dcc.Tab(label="Forecast Model", value="forecast",
                         style=TAB_STYLE, selected_style=TAB_SELECTED_STYLE),
             ],
         ),
@@ -392,22 +404,180 @@ def update_dashboard(tab, tiers, classes, year_range):
     tl["margin"] = dict(l=220, r=16, t=40, b=40)
     type_fig.update_layout(**tl)
 
-    content = html.Div(
-        style={"padding": "16px 24px", "backgroundColor": A_PAPER},
-        children=[
-            dcc.Graph(figure=rolling_fig, style={"height": "210px", "marginBottom": "12px"}),
-            html.Div(
-                style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "12px",
-                       "marginBottom": "16px"},
-                children=[
-                    dcc.Graph(figure=high_fig, style={"height": "280px"}),
-                    dcc.Graph(figure=type_fig, style={"height": "280px"}),
-                ],
-            ),
-            dcc.Graph(figure=hotspot_fig, style={"height": "420px"}),
-        ],
-    )
-    return content, cards
+    if tab == "analytics":
+        return html.Div(
+            style={"padding": "16px 24px", "backgroundColor": A_PAPER},
+            children=[
+                dcc.Graph(figure=rolling_fig, style={"height": "210px", "marginBottom": "12px"}),
+                html.Div(
+                    style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "12px",
+                           "marginBottom": "16px"},
+                    children=[
+                        dcc.Graph(figure=high_fig, style={"height": "280px"}),
+                        dcc.Graph(figure=type_fig, style={"height": "280px"}),
+                    ],
+                ),
+                dcc.Graph(figure=hotspot_fig, style={"height": "420px"}),
+            ],
+        ), cards
+
+    # ── FORECAST TAB ─────────────────────────────────────────────────
+    if tab == "forecast":
+        F_PAPER  = "#FFF8EE"
+        F_BG     = "#FFFDF7"
+        F_TEXT   = "#3D2B1F"
+        F_GRID   = "#DDD0BE"
+        F_ORANGE = "#CC5500"
+        F_AMBER  = "#F5A623"
+        F_YELLOW = "#FFD166"
+        F_BLUE   = "#2C7BB6"
+
+        def f_layout(title):
+            return dict(
+                title=dict(text=title, font=dict(color=F_TEXT, size=13), x=0.02),
+                paper_bgcolor=F_PAPER, plot_bgcolor=F_BG,
+                font=dict(color=F_TEXT, size=11),
+                margin=dict(l=50, r=16, t=44, b=40),
+                legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10, color=F_TEXT)),
+                xaxis=dict(gridcolor=F_GRID, zerolinecolor=F_GRID, color=F_TEXT),
+                yaxis=dict(gridcolor=F_GRID, zerolinecolor=F_GRID, color=F_TEXT),
+            )
+
+        # Weekly totals across all sites
+        weekly = mosq_df.groupby("Week_Start", as_index=False).agg({
+            "Mosq_Count": "sum",
+            "DailyAverageDryBulbTemperature": "mean",
+            "DailyPrecipitation": "mean",
+            "DailyAverageRelativeHumidity": "mean",
+            "DailyAverageWindSpeed": "mean",
+            "Risk_Level": "mean",
+        })
+        weekly = weekly.sort_values("Week_Start")
+
+        # OLS predicted values
+        weekly["Predicted"] = (
+            _coef["const"]
+            + _coef["DailyAverageDryBulbTemperature"] * weekly["DailyAverageDryBulbTemperature"]
+            + _coef["DailyPrecipitation"] * weekly["DailyPrecipitation"]
+            + _coef["DailyAverageRelativeHumidity"] * weekly["DailyAverageRelativeHumidity"]
+            + _coef["DailyAverageWindSpeed"] * weekly["DailyAverageWindSpeed"]
+        ).clip(lower=0)
+
+        # --- Chart 1: Mosq count + temperature over time (dual axis) ---
+        ts_fig = make_subplots(specs=[[{"secondary_y": True}]])
+        ts_fig.add_trace(go.Bar(
+            x=weekly["Week_Start"], y=weekly["Mosq_Count"],
+            name="Actual Mosquito Count", marker_color=F_ORANGE, opacity=0.7,
+        ), secondary_y=False)
+        ts_fig.add_trace(go.Scatter(
+            x=weekly["Week_Start"], y=weekly["Predicted"],
+            name="Model Predicted", mode="lines",
+            line=dict(color=F_AMBER, width=2, dash="dash"),
+        ), secondary_y=False)
+        ts_fig.add_trace(go.Scatter(
+            x=weekly["Week_Start"], y=weekly["DailyAverageDryBulbTemperature"],
+            name="Avg Temp (°F)", mode="lines",
+            line=dict(color=F_BLUE, width=1.5),
+        ), secondary_y=True)
+        ts_fig.update_layout(
+            title=dict(text="Weekly Mosquito Count vs Temperature  (actual vs model predicted)",
+                       font=dict(color=F_TEXT, size=13), x=0.02),
+            paper_bgcolor=F_PAPER, plot_bgcolor=F_BG,
+            font=dict(color=F_TEXT, size=11),
+            margin=dict(l=50, r=50, t=44, b=40),
+            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10, color=F_TEXT)),
+            xaxis=dict(gridcolor=F_GRID, zerolinecolor=F_GRID, color=F_TEXT),
+            yaxis=dict(title="Mosquito Count", gridcolor=F_GRID, color=F_TEXT),
+            yaxis2=dict(title="Temperature (°F)", color=F_BLUE, showgrid=False),
+            barmode="overlay",
+        )
+
+        # --- Chart 2: Risk level over time ---
+        risk_fig = go.Figure()
+        risk_fig.add_trace(go.Scatter(
+            x=weekly["Week_Start"], y=weekly["Risk_Level"].round(1),
+            mode="lines+markers",
+            line=dict(color=F_ORANGE, width=2),
+            marker=dict(size=5, color=weekly["Risk_Level"],
+                        colorscale=[[0, F_YELLOW], [0.5, F_AMBER], [1, "#990000"]],
+                        cmin=1, cmax=10),
+            fill="tozeroy", fillcolor="rgba(204,85,0,0.10)",
+            name="Risk Level",
+        ))
+        # Add threshold line at 5
+        risk_fig.add_hline(y=5, line_dash="dot", line_color=F_AMBER,
+                           annotation_text="Mid threshold (5)", annotation_font_color=F_TEXT)
+        rl = f_layout("Weekly Mosquito Risk Level (1–10 Scale)")
+        rl["yaxis"]["range"] = [0, 11]
+        rl["yaxis"]["title"] = "Risk Level"
+        risk_fig.update_layout(**rl)
+
+        # --- Chart 3: Scatter — each variable vs mosq count (2x2) ---
+        scatter_vars = [
+            ("DailyAverageDryBulbTemperature", "Temperature (°F)", F_ORANGE),
+            ("DailyPrecipitation",             "Precipitation",     F_BLUE),
+            ("DailyAverageRelativeHumidity",   "Humidity (%)",      F_AMBER),
+            ("DailyAverageWindSpeed",          "Wind Speed (mph)",  "#6C8EBF"),
+        ]
+        scatter_fig = make_subplots(rows=2, cols=2, subplot_titles=[v[1] for v in scatter_vars])
+        for i, (col, label, color) in enumerate(scatter_vars):
+            r, c = divmod(i, 2)
+            scatter_fig.add_trace(
+                go.Scatter(
+                    x=mosq_df[col], y=mosq_df["Mosq_Count"],
+                    mode="markers", marker=dict(color=color, opacity=0.35, size=4),
+                    name=label, showlegend=False,
+                ),
+                row=r+1, col=c+1,
+            )
+        scatter_fig.update_layout(
+            paper_bgcolor=F_PAPER, plot_bgcolor=F_BG,
+            font=dict(color=F_TEXT, size=11),
+            margin=dict(l=40, r=16, t=44, b=40),
+            title=dict(text="Weather Variables vs Mosquito Count",
+                       font=dict(color=F_TEXT, size=13), x=0.02),
+        )
+        scatter_fig.update_xaxes(gridcolor=F_GRID, zerolinecolor=F_GRID, color=F_TEXT)
+        scatter_fig.update_yaxes(gridcolor=F_GRID, zerolinecolor=F_GRID, color=F_TEXT,
+                                 title_text="Mosq Count")
+
+        # --- Model equation panel ---
+        coef = ols_model["coefficients"]
+        pval = ols_model["pvalues"]
+        def fmt(v): return f"+{v:.3f}" if v >= 0 else f"{v:.3f}"
+        def sig(k): return " *" if pval[k] < 0.05 else ""
+        eq = (
+            f"Mosq Count = {coef['const']:.2f}"
+            f"  {fmt(coef['DailyAverageDryBulbTemperature'])} × Temp{sig('DailyAverageDryBulbTemperature')}"
+            f"  {fmt(coef['DailyPrecipitation'])} × Precip{sig('DailyPrecipitation')}"
+            f"  {fmt(coef['DailyAverageRelativeHumidity'])} × Humidity{sig('DailyAverageRelativeHumidity')}"
+            f"  {fmt(coef['DailyAverageWindSpeed'])} × Wind{sig('DailyAverageWindSpeed')}"
+        )
+        model_panel = html.Div(
+            style={"backgroundColor": F_PAPER, "border": f"1px solid {F_GRID}",
+                   "borderLeft": f"4px solid {F_ORANGE}", "borderRadius": "6px",
+                   "padding": "14px 20px", "marginBottom": "14px"},
+            children=[
+                html.H3("OLS Regression Model", style={"color": F_TEXT, "margin": "0 0 8px",
+                                                        "fontSize": "14px", "fontWeight": "bold"}),
+                html.P(eq, style={"fontFamily": "monospace", "fontSize": "12px",
+                                  "color": F_TEXT, "margin": "0 0 6px", "wordBreak": "break-word"}),
+                html.P(f"R² = {ols_model['rsquared']:.4f}  |  Adj R² = {ols_model['rsquared_adj']:.4f}"
+                       f"  |  n = {ols_model['nobs']:,}  |  * = p < 0.05",
+                       style={"fontSize": "11px", "color": "#7A5C3F", "margin": 0}),
+            ],
+        )
+
+        content = html.Div(
+            style={"padding": "16px 24px", "backgroundColor": F_PAPER},
+            children=[
+                model_panel,
+                dcc.Graph(figure=ts_fig,      style={"height": "300px", "marginBottom": "12px"}),
+                dcc.Graph(figure=risk_fig,    style={"height": "240px", "marginBottom": "12px"}),
+                dcc.Graph(figure=scatter_fig, style={"height": "420px"}),
+            ],
+        )
+        return content, cards
 
 
 if __name__ == "__main__":

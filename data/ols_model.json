@@ -1,0 +1,21 @@
+{
+  "coefficients": {
+    "const": -26.292163034495644,
+    "DailyAverageDryBulbTemperature": 0.7233679327696679,
+    "DailyPrecipitation": 10.521400670687019,
+    "DailyAverageRelativeHumidity": -0.10787457979763446,
+    "DailyAverageWindSpeed": 1.6768677428457863
+  },
+  "pvalues": {
+    "const": 0.18299990737562613,
+    "DailyAverageDryBulbTemperature": 0.0001713450087012703,
+    "DailyPrecipitation": 0.772807266815412,
+    "DailyAverageRelativeHumidity": 0.6247451000977509,
+    "DailyAverageWindSpeed": 0.13540717211102926
+  },
+  "rsquared": 0.015407744005586754,
+  "rsquared_adj": 0.013683414310325048,
+  "nobs": 2289,
+  "mosq_mean": 44.75973451327434,
+  "mosq_std": 96.2645584922563
+}
