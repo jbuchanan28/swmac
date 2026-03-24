@@ -563,9 +563,9 @@ def update_dashboard(tab, tiers, classes, year_range):
                 html.H3("OLS Regression Model", style={"color": F_TEXT, "margin": "0 0 4px",
                                                         "fontSize": "14px", "fontWeight": "bold"}),
                 html.P(
-                    "Built by Garrett using Ordinary Least Squares regression — a standard statistical "
-                    "method that finds the best straight-line relationship between weather conditions and "
-                    "mosquito counts. Fit on 2,289 weekly trap readings from 2023–2025.",
+                    "Ordinary Least Squares regression — a standard statistical method that finds the "
+                    "best straight-line relationship between weather conditions and mosquito counts. "
+                    "Fit on 2,289 weekly trap readings from 2023–2025.",
                     style={"fontSize": "12px", "color": "#7A5C3F", "margin": "0 0 8px", "lineHeight": "1.5"},
                 ),
                 html.P(eq, style={"fontFamily": "monospace", "fontSize": "12px",
@@ -821,7 +821,7 @@ def update_dashboard(tab, tiers, classes, year_range):
                         html.H2("Mosquito Population Modeling",
                                 style={"color": I_TEXT, "margin": "0 0 6px", "fontSize": "18px"}),
                         html.P(
-                            "Analysis by Garrett — correlating historical weather data with SWMAC trap counts "
+                            "Correlating historical weather data with SWMAC trap counts "
                             "(2023–2025) to identify which environmental conditions drive mosquito population booms. "
                             "All models use weekly aggregated data across St. George trap sites.",
                             style={"color": I_MUTED, "fontSize": "13px", "margin": 0, "lineHeight": "1.6"},
