@@ -43,6 +43,26 @@ def chart_layout(title):
 app = Dash(__name__, title="SWMAC Risk Dashboard")
 server = app.server
 
+# Inject viewport meta so mobile browsers don't render at desktop width
+app.index_string = """<!DOCTYPE html>
+<html>
+  <head>
+    {%metas%}
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
+    <title>{%title%}</title>
+    {%favicon%}
+    {%css%}
+  </head>
+  <body>
+    {%app_entry%}
+    <footer>
+      {%config%}
+      {%scripts%}
+      {%renderer%}
+    </footer>
+  </body>
+</html>"""
+
 df_full = load_data()
 min_year = df_full["date"].dt.year.min()
 max_year = df_full["date"].dt.year.max()
@@ -410,6 +430,7 @@ def update_dashboard(tab, tiers, classes, year_range):
             children=[
                 dcc.Graph(figure=rolling_fig, style={"height": "210px", "marginBottom": "12px"}),
                 html.Div(
+                    className="two-col-grid",
                     style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "12px",
                            "marginBottom": "16px"},
                     children=[
@@ -656,6 +677,7 @@ def update_dashboard(tab, tiers, classes, year_range):
 
         def irow(card, graph):
             return html.Div(
+                className="insight-row",
                 style={"display": "grid", "gridTemplateColumns": "1fr 2fr",
                        "gap": "14px", "marginBottom": "16px", "alignItems": "stretch"},
                 children=[card, graph],

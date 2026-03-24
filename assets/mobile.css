@@ -1,0 +1,98 @@
+/* ── Mobile responsiveness ─────────────────────────────────────────
+   Targets screens ≤ 768 px wide (phones + small tablets).
+   Desktop layout is completely untouched.
+─────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+
+  /* Header */
+  h1 { font-size: 17px !important; }
+
+  /* Stat cards — 2-up grid on phones */
+  #stat-cards {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+  }
+  #stat-cards > div {
+    min-width: unset !important;
+    padding: 10px 12px !important;
+  }
+  #stat-cards > div > div:first-child {
+    font-size: 20px !important;
+  }
+
+  /* Filter bar — stack vertically, full width */
+  #react-entry-point > div > div:nth-child(3) {
+    flex-direction: column !important;
+    padding: 10px 12px !important;
+    gap: 10px !important;
+  }
+  #react-entry-point > div > div:nth-child(3) > div {
+    width: 100% !important;
+  }
+  #react-entry-point > div > div:nth-child(3) > div > div {
+    width: 100% !important;
+    min-width: unset !important;
+  }
+
+  /* Tabs — shrink padding so all three fit */
+  .tab {
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+  }
+
+  /* ── Map tab ── */
+  /* Map graph */
+  .js-plotly-plot { }
+
+  /* Table wrapper — horizontal scroll already set, just ensure padding */
+  #tab-content {
+    padding: 0 !important;
+  }
+
+  /* ── Analytics grid (two-col → one-col) ── */
+  .two-col-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Forecast / Insights rows (side-by-side card+chart → stack) ── */
+  .insight-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Give charts a sensible mobile height */
+  .mobile-chart-sm .js-plotly-plot { height: 220px !important; }
+
+  /* Reduce inner padding on all tab content */
+  #tab-content > div {
+    padding: 10px 10px !important;
+  }
+
+  /* Model equation panel — allow long equation to wrap */
+  #tab-content p[style*="monospace"] {
+    font-size: 10px !important;
+    word-break: break-all !important;
+  }
+
+  /* Map height on mobile */
+  #tab-content .js-plotly-plot[style*="520px"],
+  #tab-content .js-plotly-plot[style*="height: 520px"] {
+    height: 340px !important;
+  }
+}
+
+/* Very small phones (≤ 480 px) */
+@media (max-width: 480px) {
+  h1 { font-size: 15px !important; }
+
+  #stat-cards {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .tab {
+    padding: 7px 9px !important;
+    font-size: 11px !important;
+  }
+}
