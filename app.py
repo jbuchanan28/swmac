@@ -560,8 +560,14 @@ def update_dashboard(tab, tiers, classes, year_range):
                    "borderLeft": f"4px solid {F_ORANGE}", "borderRadius": "6px",
                    "padding": "14px 20px", "marginBottom": "14px"},
             children=[
-                html.H3("OLS Regression Model", style={"color": F_TEXT, "margin": "0 0 8px",
+                html.H3("OLS Regression Model", style={"color": F_TEXT, "margin": "0 0 4px",
                                                         "fontSize": "14px", "fontWeight": "bold"}),
+                html.P(
+                    "Built by Garrett using Ordinary Least Squares regression — a standard statistical "
+                    "method that finds the best straight-line relationship between weather conditions and "
+                    "mosquito counts. Fit on 2,289 weekly trap readings from 2023–2025.",
+                    style={"fontSize": "12px", "color": "#7A5C3F", "margin": "0 0 8px", "lineHeight": "1.5"},
+                ),
                 html.P(eq, style={"fontFamily": "monospace", "fontSize": "12px",
                                   "color": F_TEXT, "margin": "0 0 6px", "wordBreak": "break-word"}),
                 html.P(f"R² = {ols_model['rsquared']:.4f}  |  Adj R² = {ols_model['rsquared_adj']:.4f}"
@@ -570,13 +576,49 @@ def update_dashboard(tab, tiers, classes, year_range):
             ],
         )
 
+        def blurb(text):
+            return html.P(text, style={
+                "color": "#7A5C3F", "fontSize": "12px", "lineHeight": "1.6",
+                "margin": "4px 0 14px", "maxWidth": "860px",
+            })
+
         content = html.Div(
             style={"padding": "16px 24px", "backgroundColor": F_PAPER},
             children=[
                 model_panel,
-                dcc.Graph(figure=ts_fig,      style={"height": "300px", "marginBottom": "12px"}),
-                dcc.Graph(figure=risk_fig,    style={"height": "240px", "marginBottom": "12px"}),
-                dcc.Graph(figure=scatter_fig, style={"height": "420px"}),
+                blurb(
+                    "This model estimates weekly mosquito counts using four weather inputs: temperature, "
+                    "precipitation, humidity, and wind speed. Temperature is the only statistically "
+                    "significant factor (marked with *). The orange bars show what traps actually caught "
+                    "each week; the dashed amber line is what the model predicted. When the two track "
+                    "closely, the model is doing its job — gaps indicate other factors (standing water "
+                    "from construction, irrigation, etc.) are driving activity."
+                ),
+                dcc.Graph(figure=ts_fig, style={"height": "300px", "marginBottom": "4px"}),
+                blurb(
+                    "The blue line (right axis) shows average weekly temperature. Notice how mosquito "
+                    "peaks closely follow temperature peaks — population booms typically lag a warm "
+                    "stretch by 2–4 weeks, which is the time it takes for eggs to develop into adults. "
+                    "This gives SWMAC an early warning window to pre-treat sites before adults emerge."
+                ),
+                dcc.Graph(figure=risk_fig, style={"height": "240px", "marginBottom": "4px"}),
+                blurb(
+                    "This chart translates raw trap counts into a 1–10 risk scale developed by Garrett "
+                    "using z-scores — a measure of how far above or below the historical average a given "
+                    "week's count is. Level 1 means near-zero activity (typical off-season). "
+                    "Level 5 is around the seasonal average. Levels 8–10 represent significant "
+                    "outbreaks — counts 1.5 to 3+ standard deviations above normal — and are the "
+                    "threshold for immediate SWMAC response. The dotted line marks the mid-point (5)."
+                ),
+                dcc.Graph(figure=scatter_fig, style={"height": "420px", "marginBottom": "4px"}),
+                blurb(
+                    "Each scatter plot shows the raw relationship between one weather variable and "
+                    "mosquito trap counts across all weeks and sites. Temperature (top-left) shows the "
+                    "clearest upward trend — higher temps mean more mosquitoes. Precipitation (top-right) "
+                    "shows a positive but noisy relationship; rain creates breeding habitat but St. George "
+                    "gets so little rain that irrigation is often a bigger driver. Humidity and wind "
+                    "(bottom row) show weaker patterns and were not statistically significant in the model."
+                ),
             ],
         )
         return content, cards
