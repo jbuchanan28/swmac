@@ -3,6 +3,7 @@ SWMAC Mosquito Risk Dashboard - Dash web application for Render deployment.
 Reads from pre-processed CSV files in data/.
 """
 import json
+import sys
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -10,6 +11,7 @@ from dash import Dash, dcc, html, dash_table, Input, Output
 from pathlib import Path
 
 DATA_DIR = Path(__file__).parent / "data"
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 TIER_COLORS = {"Monitor": "#2ecc71", "Larvicide": "#f39c12", "Adulticide": "#e74c3c"}
 RISK_COLORS = {"HIGH": "#e74c3c", "MEDIUM": "#f39c12", "LOW": "#2ecc71"}
@@ -66,6 +68,17 @@ app.index_string = """<!DOCTYPE html>
 df_full = load_data()
 min_year = df_full["date"].dt.year.min()
 max_year = df_full["date"].dt.year.max()
+
+# Load trap surveillance data
+try:
+    from trap_data import site_summary
+    trap_df   = pd.read_csv(DATA_DIR / "trap_data_clean.csv", parse_dates=["date"])
+    trap_sites = site_summary(trap_df)
+    trap_sites = trap_sites[trap_sites["lat"].notna() & trap_sites["lon"].notna()]
+except Exception as _e:
+    print(f"[warn] trap data unavailable: {_e}")
+    trap_df    = pd.DataFrame()
+    trap_sites = pd.DataFrame()
 
 # Load mosquito model data
 mosq_df = pd.read_csv(DATA_DIR / "mosq_weather_merged.csv", parse_dates=["Week_Start"])
@@ -238,6 +251,36 @@ def update_dashboard(tab, tiers, classes, year_range):
                 ),
                 hoverinfo="text",
             ))
+
+        # Trap site overlay — sized by total catch, colored by disease activity
+        if not trap_sites.empty:
+            max_catch = trap_sites["total_mosquitoes"].max()
+            trap_sizes = (trap_sites["total_mosquitoes"] / max_catch * 28 + 8).clip(8, 36)
+            trap_colors = trap_sites["any_positive"].map({True: "#cc0000", False: "#4a90d9"})
+            map_fig.add_trace(go.Scattermap(
+                lat=trap_sites["lat"], lon=trap_sites["lon"], mode="markers",
+                marker=dict(
+                    size=trap_sizes,
+                    color=trap_colors,
+                    opacity=0.75,
+                    symbol="circle",
+                ),
+                name="Trap Sites",
+                text=trap_sites.apply(
+                    lambda r: (
+                        f"<b>Trap: {r['site']}</b><br>"
+                        f"Total caught (2016–2025): {int(r['total_mosquitoes']):,}<br>"
+                        f"Trap events: {int(r['trap_events']):,}<br>"
+                        f"Dominant species: {r['top_species']}<br>"
+                        f"WNV positives: {int(r['wnv_positives'])}  "
+                        f"SLE positives: {int(r['sle_positives'])}<br>"
+                        f"Active: {str(r['first_active'])[:10]} → {str(r['last_active'])[:10]}"
+                    ),
+                    axis=1,
+                ),
+                hoverinfo="text",
+            ))
+
         map_fig.update_layout(
             map=dict(style="open-street-map", center=dict(lat=37.1041, lon=-113.5841), zoom=11),
             margin=dict(l=0, r=0, t=0, b=0),
@@ -424,6 +467,101 @@ def update_dashboard(tab, tiers, classes, year_range):
     tl["margin"] = dict(l=220, r=16, t=40, b=40)
     type_fig.update_layout(**tl)
 
+    # ── Trap surveillance charts (analytics tab only) ─────────────────
+    trap_children = []
+    if not trap_df.empty:
+        # Annual mosquito totals 2016-2025
+        annual = trap_df.groupby("year")["count"].sum().reset_index()
+        annual_fig = go.Figure(go.Bar(
+            x=annual["year"], y=annual["count"],
+            marker_color=annual["count"],
+            marker=dict(colorscale=[[0, A_YELLOW], [1, A_ORANGE]], showscale=False),
+            text=annual["count"].apply(lambda v: f"{int(v):,}"),
+            textposition="outside",
+            textfont=dict(color=A_TEXT, size=10),
+        ))
+        al = a_layout("Annual Mosquito Trap Totals — All Sites (2016–2025)")
+        al["xaxis"]["dtick"] = 1
+        al["xaxis"]["title"] = "Year"
+        al["yaxis"]["title"] = "Total Mosquitoes Caught"
+        annual_fig.update_layout(**al)
+
+        # Species breakdown — top 8 species by total count
+        species_totals = (
+            trap_df[~trap_df["species"].isin(["-", "_", "nan", ""])]
+            .groupby("species")["count"].sum()
+            .sort_values(ascending=False).head(8)
+        )
+        species_labels = {
+            "CxEry": "Culex erythrothorax", "CxTar": "Culex tarsalis",
+            "AeVex": "Aedes vexans",        "CxPip/Qui": "Cx. pipiens/quinquefasciatus",
+            "CuIno": "Culiseta inornata",   "AnFre": "Anopheles freeborni",
+            "AnFra": "Anopheles franciscanus","OcNig": "Ochlerotatus nigromaculis",
+            "CxThr": "Culex tharomus",      "PsSig": "Psorophora signipennis",
+            "AeAeg": "Aedes aegypti",
+        }
+        sp_names  = [species_labels.get(s, s) for s in species_totals.index]
+        sp_colors = [A_ORANGE, A_AMBER, A_YELLOW, "#E8A020", "#D98B10",
+                     "#C97800", "#B86500", "#A75200"][:len(species_totals)]
+        sp_fig = go.Figure(go.Bar(
+            x=species_totals.values[::-1], y=sp_names[::-1],
+            orientation="h",
+            marker_color=sp_colors[::-1],
+            text=[f"{int(v):,}" for v in species_totals.values[::-1]],
+            textposition="outside",
+            textfont=dict(color=A_TEXT, size=10),
+        ))
+        sl = a_layout("Mosquito Species Breakdown — Total Catch (2016–2025)")
+        sl["xaxis"]["title"] = "Total Count"
+        sl["margin"] = dict(l=220, r=60, t=40, b=40)
+        sp_fig.update_layout(**sl)
+
+        # WNV + SLE detections by year
+        wnv_by_year = trap_df[trap_df["wnv"] == True].groupby("year").size().reindex(
+            range(2016, 2026), fill_value=0)
+        sle_by_year = trap_df[trap_df["sle"] == True].groupby("year").size().reindex(
+            range(2016, 2026), fill_value=0)
+        disease_fig = go.Figure()
+        disease_fig.add_trace(go.Bar(
+            x=wnv_by_year.index, y=wnv_by_year.values,
+            name="WNV Positives", marker_color=A_ORANGE, opacity=0.9,
+        ))
+        disease_fig.add_trace(go.Bar(
+            x=sle_by_year.index, y=sle_by_year.values,
+            name="SLE Positives", marker_color=A_AMBER, opacity=0.9,
+        ))
+        dl = a_layout("Disease Detections by Year — West Nile Virus & St. Louis Encephalitis")
+        dl["xaxis"]["dtick"] = 1
+        dl["xaxis"]["title"] = "Year"
+        dl["yaxis"]["title"] = "Positive Pool Tests"
+        dl["barmode"] = "group"
+        disease_fig.update_layout(**dl)
+
+        trap_children = [
+            html.Hr(style={"border": "none", "borderTop": f"2px solid {A_GRID}", "margin": "24px 0 18px"}),
+            html.Div(
+                style={"marginBottom": "16px"},
+                children=[
+                    html.H2("Trap Surveillance Data", style={"color": A_TEXT, "margin": "0 0 4px", "fontSize": "17px"}),
+                    html.P(
+                        "Historical mosquito trap data from SWMAC field sites across the St. George region, "
+                        "2016–2025. Includes species identification and disease testing (WNV, SLE) results.",
+                        style={"color": "#7A5C3F", "fontSize": "12px", "margin": 0},
+                    ),
+                ],
+            ),
+            dcc.Graph(figure=annual_fig, style={"height": "260px", "marginBottom": "12px"}),
+            html.Div(
+                className="two-col-grid",
+                style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "12px",
+                       "marginBottom": "12px"},
+                children=[
+                    dcc.Graph(figure=sp_fig,      style={"height": "300px"}),
+                    dcc.Graph(figure=disease_fig, style={"height": "300px"}),
+                ],
+            ),
+        ]
+
     if tab == "analytics":
         return html.Div(
             style={"padding": "16px 24px", "backgroundColor": A_PAPER},
@@ -439,6 +577,7 @@ def update_dashboard(tab, tiers, classes, year_range):
                     ],
                 ),
                 dcc.Graph(figure=hotspot_fig, style={"height": "420px"}),
+                *trap_children,
             ],
         ), cards
 
