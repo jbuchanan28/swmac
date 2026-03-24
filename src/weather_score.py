@@ -8,11 +8,20 @@ from pathlib import Path
 WEATHER_FILE = Path(__file__).parent.parent.parent / "Downloads" / "SWMAC Project" / "4246861.xlsx"
 WEATHER_CACHE = Path(__file__).parent.parent / "data" / "weather_scores.csv"
 
-# Thresholds from SWMAC problem statement
-TEMP_THRESHOLD = 70       # °F
+# OLS-informed weighting (Garrett's regression, 2023-2025 trap data)
+# Temperature is the only statistically significant predictor (p < 0.001).
+# Precipitation has a positive but non-significant effect.
+# Humidity showed a slight negative correlation and is excluded.
+#
+# Weights: temperature 80%, precipitation 20%
+# Temperature scale: 0 at 65°F → 1.0 at 105°F+
+# Precipitation scale: 0 at 0" → 1.0 at 0.5"+ (7-day rolling)
+TEMP_MIN = 65.0           # °F — below this, negligible mosquito activity
+TEMP_MAX = 105.0          # °F — at or above this, maximum temperature contribution
 PRECIP_WINDOW_DAYS = 7    # rolling window for precipitation
-PRECIP_THRESHOLD = 0.1    # inches over the window
-RH_THRESHOLD = 60         # percent
+PRECIP_MAX = 0.5          # inches over window for full precip contribution
+TEMP_WEIGHT = 0.80        # relative importance of temperature (OLS-derived)
+PRECIP_WEIGHT = 0.20      # relative importance of precipitation (OLS-derived)
 
 
 def load_weather_scores(use_cache: bool = True) -> pd.DataFrame:
@@ -38,13 +47,19 @@ def load_weather_scores(use_cache: bool = True) -> pd.DataFrame:
     # Rolling 7-day precipitation sum
     df["precip_7d"] = df["precip"].rolling(window=PRECIP_WINDOW_DAYS, min_periods=1).sum()
 
-    # Score each component (0 or 1)
-    df["score_temp"] = (df["temp"] >= TEMP_THRESHOLD).astype(int)
-    df["score_precip"] = (df["precip_7d"] >= PRECIP_THRESHOLD).astype(int)
-    df["score_rh"] = (df["rh"] >= RH_THRESHOLD).astype(int)
+    # OLS-informed continuous scores (0.0 – 1.0 each)
+    # Temperature: linear from TEMP_MIN to TEMP_MAX
+    df["score_temp"] = ((df["temp"] - TEMP_MIN) / (TEMP_MAX - TEMP_MIN)).clip(0, 1)
+    # Precipitation: linear from 0 to PRECIP_MAX inches over 7 days
+    df["score_precip"] = (df["precip_7d"] / PRECIP_MAX).clip(0, 1)
 
-    # Combined weather risk score 0-3
-    df["weather_risk"] = df["score_temp"] + df["score_precip"] + df["score_rh"]
+    # Weighted weather risk index (0.0 – 1.0)
+    # Temperature is weighted 80% (only statistically significant predictor per OLS).
+    # Precipitation is weighted 20% (positive coefficient but non-significant).
+    # Humidity excluded (slight negative correlation in St. George's arid climate).
+    df["weather_risk"] = (
+        TEMP_WEIGHT * df["score_temp"] + PRECIP_WEIGHT * df["score_precip"]
+    ).round(4)
 
     result = df[["date", "temp", "precip", "precip_7d", "rh", "weather_risk"]].copy()
 

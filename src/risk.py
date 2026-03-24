@@ -9,7 +9,9 @@ Base scores by risk class:
     MEDIUM = 2  (multi-family, single family)
     LOW    = 1  (interior/mechanical work)
 
-Weather multiplier: 1 + (weather_risk / 3)  → range 1.0 – 2.0
+Weather multiplier: 1 + weather_risk  → range 1.0 – 2.0
+    weather_risk is a 0.0–1.0 index weighted by OLS regression results:
+    80% temperature (only significant predictor, p<0.001) + 20% precipitation.
 
 Time decay: linear from 1.0 (permit issued today) to 0.0 (365 days ago)
     Permits older than 365 days still included for historical analysis
@@ -40,7 +42,8 @@ def _time_decay(permit_date: pd.Timestamp, as_of: date) -> float:
 
 
 def _weather_multiplier(weather_risk: float) -> float:
-    return 1.0 + (weather_risk / 3.0)
+    # weather_risk is already a 0.0–1.0 OLS-weighted index
+    return 1.0 + weather_risk
 
 
 def _haversine_miles(lat1, lon1, lat2, lon2) -> float:
