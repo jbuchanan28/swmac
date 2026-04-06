@@ -973,58 +973,60 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
                 ],
             ),
             html.H3("Temperature", style={"color": F_ORANGE, "fontSize": "14px", "margin": "0 0 10px"}),
-            irow(insight_card("Strongest predictor (p < 0.001)",
-                "Temperature has the clearest and most consistent relationship with mosquito counts. "
-                "Populations surge during St. George's hot summers — trap counts regularly spike above "
-                "the historical mean when weekly averages exceed ~85°F. The scatter shows a wide spread "
-                "at higher temperatures, reflecting that heat is necessary but not sufficient on its own.", F_ORANGE),
+            irow(insight_card(f"Strongest weather driver (coeff +{_rc['Prior Avg Temp (°F)']:.3f})",
+                "Temperature is the leading weather predictor in the Ridge model. Populations surge "
+                "during St. George's hot summers — trap counts regularly spike above the historical "
+                "mean when prior-week averages exceed ~85°F. The scatter shows a wide spread at higher "
+                "temperatures, reflecting that heat is necessary but not sufficient on its own: the "
+                "prior week's count (autocorrelation) explains even more variance.", F_ORANGE),
                 dcc.Graph(figure=temp_scatter, style={"height": "260px"})),
-            irow(insight_card("Population timing follows temperature",
-                "The dual-axis time series shows mosquito peaks closely track temperature peaks across "
-                "2023–2025. The lag between temperature rise and population boom (roughly 2–4 weeks) "
-                "reflects egg-to-adult development time, giving SWMAC an actionable lead time for "
-                "larvicide deployment before adults emerge.", F_ORANGE),
+            irow(insight_card("Model uses prior-week temperature as input",
+                "The Ridge model uses last week's temperature to predict this week's count — not the "
+                "current week. This one-week lag reflects egg-to-adult development time and gives SWMAC "
+                "an actionable lead: rising temperatures this week signal rising populations next week, "
+                "providing a window for pre-emptive larvicide deployment before adults emerge.", F_ORANGE),
                 dcc.Graph(figure=ts_temp, style={"height": "260px"})),
             html.H3("Precipitation", style={"color": F_BLUE, "fontSize": "14px", "margin": "16px 0 10px"}),
-            irow(insight_card("Positive relationship, high variability",
-                "Precipitation shows a positive coefficient (+10.52) — rain events create temporary "
-                "standing water that serves as breeding habitat. However, the relationship is not "
-                "statistically significant, likely because St. George receives very little rainfall "
-                "overall and irrigation is a more consistent water source than precipitation.", F_BLUE),
+            irow(insight_card(f"Small positive effect (coeff +{_rc['Prior Precipitation (in)']:.4f})",
+                "Precipitation has a small positive coefficient in the Ridge model — rain creates "
+                "temporary standing water that serves as breeding habitat. The effect is modest "
+                "because St. George receives very little rainfall overall and irrigation is a more "
+                "consistent and larger water source than precipitation. The scatter reflects this "
+                "weak but directionally correct relationship.", F_BLUE),
                 dcc.Graph(figure=precip_scatter, style={"height": "260px"})),
             irow(insight_card("Short-term spikes after rain events",
-                "Looking at the time series, brief rainfall events occasionally correspond with "
-                "short-term upticks in trap counts in subsequent weeks. These are most pronounced "
-                "during summer when temperatures are already high enough to accelerate larval "
-                "development in newly formed standing water.", F_BLUE),
+                "Brief rainfall events occasionally correspond with short-term upticks in trap counts "
+                "in subsequent weeks. These are most pronounced during summer when temperatures are "
+                "already high enough to accelerate larval development in newly formed standing water. "
+                "The effect is most visible at sites near drainage channels and retention areas.", F_BLUE),
                 dcc.Graph(figure=ts_precip, style={"height": "260px"})),
             html.H3("Humidity", style={"color": F_AMBER, "fontSize": "14px", "margin": "16px 0 10px"}),
-            irow(insight_card("Slight negative coefficient in arid climate",
-                "Contrary to what one might expect, relative humidity shows a slight negative "
-                "coefficient (−0.11) in St. George — not statistically significant. In arid desert "
-                "climates, higher humidity often co-occurs with cooler or windy conditions, which "
-                "may suppress activity. The local irrigation-driven microclimate likely confounds "
-                "the broader humidity signal.", F_AMBER),
+            irow(insight_card(f"Negative coefficient in arid climate (coeff {_rc['Prior Humidity (%)']:.4f})",
+                "Humidity has a negative coefficient in the Ridge model — higher humidity is associated "
+                "with fewer mosquitoes in St. George's arid desert climate. This counterintuitive result "
+                "holds across the full 2018–2025 dataset: humid periods here tend to coincide with "
+                "cooler or windier shoulder-season conditions that suppress activity, rather than the "
+                "warm humid summers seen in other regions. The weather risk score reflects this "
+                "by reducing the permit risk multiplier slightly on humid days.", F_AMBER),
                 dcc.Graph(figure=humid_scatter, style={"height": "260px"})),
             irow(insight_card("Humidity peaks inverse to mosquito season",
-                "Relative humidity in St. George tends to be highest in winter and during "
-                "monsoon season, while mosquito populations peak mid-summer during the driest "
-                "stretch. This inverse seasonal pattern helps explain why humidity does not "
-                "emerge as a positive predictor in this dataset.", F_AMBER),
+                "Relative humidity in St. George tends to be highest in winter and during monsoon "
+                "season, while mosquito populations peak mid-summer during the driest stretch. "
+                "This inverse seasonal pattern is consistent with the negative coefficient — high "
+                "humidity here is a marker of off-season conditions, not favorable breeding conditions.", F_AMBER),
                 dcc.Graph(figure=ts_humid, style={"height": "260px"})),
             html.H3("Wind Speed", style={"color": "#6C8EBF", "fontSize": "14px", "margin": "16px 0 10px"}),
-            irow(insight_card("Minor positive effect, not significant",
-                "Wind speed carries a positive coefficient (+1.68) in the model but is not "
-                "statistically significant. Wind does not directly support mosquito breeding, "
-                "but higher wind readings in this dataset may be co-occurring with warm summer "
-                "weather patterns — making the coefficient a proxy for season rather than a "
-                "causal driver.", "#6C8EBF"),
+            irow(insight_card(f"Smallest weather effect (coeff +{_rc['Prior Wind Speed (mph)']:.4f})",
+                "Wind speed has the smallest coefficient of all five features in the Ridge model — "
+                "nearly negligible. Wind does not directly support mosquito breeding. Its small "
+                "positive value may reflect a seasonal co-occurrence with warm summer weather patterns "
+                "rather than a causal relationship. It contributes only 1% of the weather risk weight.", "#6C8EBF"),
                 dcc.Graph(figure=wind_scatter, style={"height": "260px"})),
             irow(insight_card("No clear directional pattern in time series",
-                "Wind speed over 2023–2025 shows no consistent relationship with population "
-                "highs or lows in the time series. This reinforces that wind is not a primary "
-                "driver of mosquito activity in this region — temperature remains the dominant "
-                "environmental signal.", "#6C8EBF"),
+                "Wind speed shows no consistent relationship with population highs or lows across "
+                "the full time series. This reinforces that wind is not a meaningful driver of "
+                "mosquito activity in this region. Temperature and prior-week count remain the "
+                "dominant signals for operational forecasting.", "#6C8EBF"),
                 dcc.Graph(figure=ts_wind, style={"height": "260px"})),
             html.H3("Risk Classification (0–10 Scale)", style={"color": F_ORANGE, "fontSize": "14px", "margin": "16px 0 10px"}),
             irow(insight_card("Distribution-anchored risk levels",
