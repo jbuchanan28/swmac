@@ -1,0 +1,6 @@
+Feature,Coefficient,Direction
+Prior Week Count (log),1.039782,↑ increases count
+Prior Avg Temp (°F),0.211604,↑ increases count
+Prior Humidity (%),-0.043595,↓ decreases count
+Prior Precipitation (in),0.016451,↑ increases count
+Prior Wind Speed (mph),0.003227,↑ increases count

@@ -1,0 +1,21 @@
+{
+  "model_type": "Ridge",
+  "coefficients": {
+    "Prior Week Count (log)": 1.039782,
+    "Prior Avg Temp (\u00b0F)": 0.211604,
+    "Prior Humidity (%)": -0.043595,
+    "Prior Precipitation (in)": 0.016451,
+    "Prior Wind Speed (mph)": 0.003227
+  },
+  "intercept": 2.234,
+  "rsquared": 0.5446,
+  "cv_r2_mean": 0.4998,
+  "cv_r2_std": 0.0965,
+  "rmse": 83.4,
+  "mae": 28.1,
+  "nobs": 2256,
+  "mosq_mean": 39.9,
+  "mosq_std": 133.0,
+  "train_years": "2018-2022",
+  "test_years": "2023-2025"
+}

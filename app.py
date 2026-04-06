@@ -78,13 +78,15 @@ except Exception as _e:
     trap_df    = pd.DataFrame()
     trap_sites = pd.DataFrame()
 
-# Load mosquito model data
-mosq_df = pd.read_csv(DATA_DIR / "mosq_weather_merged.csv", parse_dates=["Week_Start"])
-with open(DATA_DIR / "ols_model.json") as _f:
-    ols_model = json.load(_f)
-_coef = ols_model["coefficients"]
-_mosq_mean = ols_model["mosq_mean"]
-_mosq_std  = ols_model["mosq_std"]
+# Load mosquito model data (Ridge model)
+mosq_df        = pd.read_csv(DATA_DIR / "swmac_weekly_merged.csv",     parse_dates=["week_start"])
+ridge_pred_df  = pd.read_csv(DATA_DIR / "swmac_simple_predictions.csv", parse_dates=["week_start"])
+weekly_risk_df = pd.read_csv(DATA_DIR / "swmac_weekly_risk.csv",        parse_dates=["week_start"])
+risk_rankings_df = pd.read_csv(DATA_DIR / "swmac_risk_rankings.csv")
+with open(DATA_DIR / "ridge_model.json") as _f:
+    ridge_model = json.load(_f)
+_mosq_mean = ridge_model["mosq_mean"]
+_mosq_std  = ridge_model["mosq_std"]
 
 TAB_STYLE = {
     "backgroundColor": "#1a1d2e",
@@ -271,25 +273,41 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
                     hoverinfo="text",
                 ))
 
-        # Trap site overlay — sized by total catch, colored by disease activity
+        # Trap site overlay — sized by total catch, colored by predicted risk level
         if show_traps and not trap_sites.empty:
-            max_catch = trap_sites["total_mosquitoes"].max()
-            trap_sizes = (trap_sites["total_mosquitoes"] / max_catch * 28 + 8).clip(8, 36)
-            trap_colors = trap_sites["any_positive"].map({True: "#cc0000", False: "#4a90d9"})
+            _trap_risk = trap_sites.merge(
+                risk_rankings_df[["site", "risk_level", "risk_label", "mean_predicted"]],
+                on="site", how="left"
+            )
+            _trap_risk["risk_level"]    = _trap_risk["risk_level"].fillna(0)
+            _trap_risk["risk_label"]    = _trap_risk["risk_label"].fillna("No model data")
+            _trap_risk["mean_predicted"]= _trap_risk["mean_predicted"].fillna(0)
+            max_catch  = _trap_risk["total_mosquitoes"].max()
+            trap_sizes = (_trap_risk["total_mosquitoes"] / max_catch * 28 + 8).clip(8, 36)
+            # Risk colorscale: 0=green → 5=amber → 10=dark red
+            _RISK_COLORS_MAP = {
+                0: "#27ae60", 1: "#2ecc71", 2: "#a9cce3", 3: "#5dade2",
+                4: "#f4d03f", 5: "#f39c12", 6: "#e67e22", 7: "#e74c3c",
+                8: "#c0392b", 9: "#922b21", 10: "#641e16",
+            }
+            trap_colors = _trap_risk["risk_level"].apply(
+                lambda v: _RISK_COLORS_MAP.get(int(round(v)), "#4a90d9")
+            )
             map_fig.add_trace(go.Scattermap(
-                lat=trap_sites["lat"], lon=trap_sites["lon"], mode="markers",
+                lat=_trap_risk["lat"], lon=_trap_risk["lon"], mode="markers",
                 marker=dict(
                     size=trap_sizes,
                     color=trap_colors,
-                    opacity=0.75,
+                    opacity=0.85,
                     symbol="circle",
                 ),
                 name="Trap Sites",
-                text=trap_sites.apply(
+                text=_trap_risk.apply(
                     lambda r: (
                         f"<b>Trap: {r['site']}</b><br>"
+                        f"Risk Level: {int(r['risk_level'])}/10 — {r['risk_label']}<br>"
+                        f"Avg predicted: {r['mean_predicted']:.0f} mosquitoes/week<br>"
                         f"Total caught (2016–2025): {int(r['total_mosquitoes']):,}<br>"
-                        f"Trap events: {int(r['trap_events']):,}<br>"
                         f"Dominant species: {r['top_species']}<br>"
                         f"WNV positives: {int(r['wnv_positives'])}  "
                         f"SLE positives: {int(r['sle_positives'])}<br>"
@@ -623,38 +641,41 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
             )
 
         # Weekly totals across all sites
-        weekly = mosq_df.groupby("Week_Start", as_index=False).agg({
-            "Mosq_Count": "sum",
-            "DailyAverageDryBulbTemperature": "mean",
-            "DailyPrecipitation": "mean",
-            "DailyAverageRelativeHumidity": "mean",
-            "DailyAverageWindSpeed": "mean",
-            "Risk_Level": "mean",
+        weekly = mosq_df.groupby("week_start", as_index=False).agg({
+            "total_mosquitoes": "sum",
+            "temp_avg_f":       "mean",
+            "precip_in":        "mean",
+            "rh_avg":           "mean",
+            "wind_avg_mph":     "mean",
         })
-        weekly = weekly.sort_values("Week_Start")
+        weekly = weekly.sort_values("week_start")
 
-        # OLS predicted values
-        weekly["Predicted"] = (
-            _coef["const"]
-            + _coef["DailyAverageDryBulbTemperature"] * weekly["DailyAverageDryBulbTemperature"]
-            + _coef["DailyPrecipitation"] * weekly["DailyPrecipitation"]
-            + _coef["DailyAverageRelativeHumidity"] * weekly["DailyAverageRelativeHumidity"]
-            + _coef["DailyAverageWindSpeed"] * weekly["DailyAverageWindSpeed"]
-        ).clip(lower=0)
+        # Ridge predicted values (aggregated from per-site predictions)
+        _pred_weekly = (
+            ridge_pred_df.groupby("week_start", as_index=False)["predicted_mosquitoes"]
+            .sum().rename(columns={"predicted_mosquitoes": "predicted"})
+        )
+        weekly = weekly.merge(_pred_weekly, on="week_start", how="left")
+        weekly["predicted"] = weekly["predicted"].fillna(0).clip(lower=0)
+
+        # Risk level (mean across sites per week, from Ridge risk output)
+        _risk_agg = weekly_risk_df.groupby("week_start", as_index=False)["risk_level"].mean()
+        weekly = weekly.merge(_risk_agg, on="week_start", how="left")
+        weekly["risk_level"] = weekly["risk_level"].fillna(0)
 
         # --- Chart 1: Mosq count + temperature over time (dual axis) ---
         ts_fig = make_subplots(specs=[[{"secondary_y": True}]])
         ts_fig.add_trace(go.Bar(
-            x=weekly["Week_Start"], y=weekly["Mosq_Count"],
+            x=weekly["week_start"], y=weekly["total_mosquitoes"],
             name="Actual Mosquito Count", marker_color=F_ORANGE, opacity=0.7,
         ), secondary_y=False)
         ts_fig.add_trace(go.Scatter(
-            x=weekly["Week_Start"], y=weekly["Predicted"],
+            x=weekly["week_start"], y=weekly["predicted"],
             name="Model Predicted", mode="lines",
             line=dict(color=F_AMBER, width=2, dash="dash"),
         ), secondary_y=False)
         ts_fig.add_trace(go.Scatter(
-            x=weekly["Week_Start"], y=weekly["DailyAverageDryBulbTemperature"],
+            x=weekly["week_start"], y=weekly["temp_avg_f"],
             name="Avg Temp (°F)", mode="lines",
             line=dict(color=F_BLUE, width=1.5),
         ), secondary_y=True)
@@ -674,10 +695,10 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
         # --- Chart 2: Risk level over time ---
         risk_fig = go.Figure()
         risk_fig.add_trace(go.Scatter(
-            x=weekly["Week_Start"], y=weekly["Risk_Level"].round(1),
+            x=weekly["week_start"], y=weekly["risk_level"].round(1),
             mode="lines+markers",
             line=dict(color=F_ORANGE, width=2),
-            marker=dict(size=5, color=weekly["Risk_Level"],
+            marker=dict(size=5, color=weekly["risk_level"],
                         colorscale=[[0, F_YELLOW], [0.5, F_AMBER], [1, "#990000"]],
                         cmin=1, cmax=10),
             fill="tozeroy", fillcolor="rgba(204,85,0,0.10)",
@@ -693,17 +714,17 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
 
         # --- Chart 3: Scatter — each variable vs mosq count (2x2) ---
         scatter_vars = [
-            ("DailyAverageDryBulbTemperature", "Temperature (°F)", F_ORANGE),
-            ("DailyPrecipitation",             "Precipitation",     F_BLUE),
-            ("DailyAverageRelativeHumidity",   "Humidity (%)",      F_AMBER),
-            ("DailyAverageWindSpeed",          "Wind Speed (mph)",  "#6C8EBF"),
+            ("temp_avg_f",   "Temperature (°F)", F_ORANGE),
+            ("precip_in",    "Precipitation",     F_BLUE),
+            ("rh_avg",       "Humidity (%)",      F_AMBER),
+            ("wind_avg_mph", "Wind Speed (mph)",  "#6C8EBF"),
         ]
         scatter_fig = make_subplots(rows=2, cols=2, subplot_titles=[v[1] for v in scatter_vars])
         for i, (col, label, color) in enumerate(scatter_vars):
             r, c = divmod(i, 2)
             scatter_fig.add_trace(
                 go.Scatter(
-                    x=mosq_df[col], y=mosq_df["Mosq_Count"],
+                    x=mosq_df[col], y=mosq_df["total_mosquitoes"],
                     mode="markers", marker=dict(color=color, opacity=0.35, size=4),
                     name=label, showlegend=False,
                 ),
@@ -721,35 +742,35 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
                                  title_text="Mosq Count")
 
         # --- Model equation panel ---
-        coef = ols_model["coefficients"]
-        pval = ols_model["pvalues"]
-        def fmt(v): return f"+{v:.3f}" if v >= 0 else f"{v:.3f}"
-        def sig(k): return " *" if pval[k] < 0.05 else ""
+        _rc = ridge_model["coefficients"]
+        def fmt(v): return f"+{v:.4f}" if v >= 0 else f"{v:.4f}"
         eq = (
-            f"Mosq Count = {coef['const']:.2f}"
-            f"  {fmt(coef['DailyAverageDryBulbTemperature'])} × Temp{sig('DailyAverageDryBulbTemperature')}"
-            f"  {fmt(coef['DailyPrecipitation'])} × Precip{sig('DailyPrecipitation')}"
-            f"  {fmt(coef['DailyAverageRelativeHumidity'])} × Humidity{sig('DailyAverageRelativeHumidity')}"
-            f"  {fmt(coef['DailyAverageWindSpeed'])} × Wind{sig('DailyAverageWindSpeed')}"
+            f"log(Count+1) = {ridge_model['intercept']:.3f}"
+            f"  {fmt(_rc['Prior Week Count (log)'])} × PriorCount(log)"
+            f"  {fmt(_rc['Prior Avg Temp (°F)'])} × Temp"
+            f"  {fmt(_rc['Prior Humidity (%)'])} × Humidity"
+            f"  {fmt(_rc['Prior Precipitation (in)'])} × Precip"
+            f"  {fmt(_rc['Prior Wind Speed (mph)'])} × Wind"
         )
         model_panel = html.Div(
             style={"backgroundColor": F_PAPER, "border": f"1px solid {F_GRID}",
                    "borderLeft": f"4px solid {F_ORANGE}", "borderRadius": "6px",
                    "padding": "14px 20px", "marginBottom": "14px"},
             children=[
-                html.H3("OLS Regression Model", style={"color": F_TEXT, "margin": "0 0 4px",
-                                                        "fontSize": "14px", "fontWeight": "bold"}),
+                html.H3("Ridge Regression Model", style={"color": F_TEXT, "margin": "0 0 4px",
+                                                          "fontSize": "14px", "fontWeight": "bold"}),
                 html.P(
-                    "Ordinary Least Squares regression — a standard statistical method that finds the "
-                    "best straight-line relationship between weather conditions and mosquito counts. "
-                    "Fit on 2,289 weekly trap readings from 2023–2025.",
+                    "Ridge regression — a regularized linear model that prevents overfitting by penalizing "
+                    "large coefficients. Trained on 2018–2022 trap data (site-level, weekly), tested on 2023–2025. "
+                    f"Fit on {ridge_model['nobs']:,} weekly site-readings across 8 years.",
                     style={"fontSize": "12px", "color": "#7A5C3F", "margin": "0 0 8px", "lineHeight": "1.5"},
                 ),
                 html.P(eq, style={"fontFamily": "monospace", "fontSize": "12px",
                                   "color": F_TEXT, "margin": "0 0 6px", "wordBreak": "break-word"}),
-                html.P(f"R² = {ols_model['rsquared']:.4f}  |  Adj R² = {ols_model['rsquared_adj']:.4f}"
-                       f"  |  n = {ols_model['nobs']:,}  |  * = p < 0.05",
-                       style={"fontSize": "11px", "color": "#7A5C3F", "margin": 0}),
+                html.P(
+                    f"Test R² = {ridge_model['rsquared']:.4f}  |  CV R² = {ridge_model['cv_r2_mean']:.4f} ± {ridge_model['cv_r2_std']:.4f}"
+                    f"  |  RMSE = {ridge_model['rmse']:.1f}  |  MAE = {ridge_model['mae']:.1f}",
+                    style={"fontSize": "11px", "color": "#7A5C3F", "margin": 0}),
             ],
         )
 
@@ -764,12 +785,12 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
             children=[
                 model_panel,
                 blurb(
-                    "This model estimates weekly mosquito counts using four weather inputs: temperature, "
-                    "precipitation, humidity, and wind speed. Temperature is the only statistically "
-                    "significant factor (marked with *). The orange bars show what traps actually caught "
-                    "each week; the dashed amber line is what the model predicted. When the two track "
-                    "closely, the model is doing its job — gaps indicate other factors (standing water "
-                    "from construction, irrigation, etc.) are driving activity."
+                    "This model predicts next week's mosquito count using five inputs: the prior week's "
+                    "mosquito count, temperature, humidity, precipitation, and wind speed. Prior count "
+                    "is the strongest single predictor — populations are autocorrelated week-to-week. "
+                    "Temperature is the strongest weather driver. The orange bars show what traps actually "
+                    "caught each week; the dashed amber line is the Ridge model's prediction. R² = 0.54 "
+                    "means the model explains 54% of variance — a 35× improvement over the previous OLS model."
                 ),
                 dcc.Graph(figure=ts_fig, style={"height": "300px", "marginBottom": "4px"}),
                 blurb(
@@ -780,12 +801,11 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
                 ),
                 dcc.Graph(figure=risk_fig, style={"height": "240px", "marginBottom": "4px"}),
                 blurb(
-                    "This chart translates raw trap counts into a 1–10 risk scale developed by Garrett "
-                    "using z-scores — a measure of how far above or below the historical average a given "
-                    "week's count is. Level 1 means near-zero activity (typical off-season). "
-                    "Level 5 is around the seasonal average. Levels 8–10 represent significant "
-                    "outbreaks — counts 1.5 to 3+ standard deviations above normal — and are the "
-                    "threshold for immediate SWMAC response. The dotted line marks the mid-point (5)."
+                    "This chart translates predicted trap counts into a 0–10 risk scale anchored to the "
+                    "historical distribution: Level 0 is below the median (8 mosquitoes), Level 4 is near "
+                    "the mean (40), Level 7 is one standard deviation above (147), and Level 10 is an "
+                    "outbreak (365+). This is the mean risk level across all active sites each week. "
+                    "The dotted line marks the mid-point (5)."
                 ),
                 dcc.Graph(figure=scatter_fig, style={"height": "420px", "marginBottom": "4px"}),
                 blurb(
@@ -843,7 +863,7 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
 
         # Scatter charts
         temp_scatter = go.Figure(go.Scatter(
-            x=mosq_df["DailyAverageDryBulbTemperature"], y=mosq_df["Mosq_Count"],
+            x=mosq_df["temp_avg_f"], y=mosq_df["total_mosquitoes"],
             mode="markers", marker=dict(color=F_ORANGE, opacity=0.3, size=4),
         ))
         _tsl = i_layout("Temperature (°F) vs Mosquito Count")
@@ -852,7 +872,7 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
         temp_scatter.update_layout(**_tsl)
 
         precip_scatter = go.Figure(go.Scatter(
-            x=mosq_df["DailyPrecipitation"], y=mosq_df["Mosq_Count"],
+            x=mosq_df["precip_in"], y=mosq_df["total_mosquitoes"],
             mode="markers", marker=dict(color=F_BLUE, opacity=0.3, size=4),
         ))
         _psl = i_layout("Precipitation vs Mosquito Count")
@@ -861,7 +881,7 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
         precip_scatter.update_layout(**_psl)
 
         humid_scatter = go.Figure(go.Scatter(
-            x=mosq_df["DailyAverageRelativeHumidity"], y=mosq_df["Mosq_Count"],
+            x=mosq_df["rh_avg"], y=mosq_df["total_mosquitoes"],
             mode="markers", marker=dict(color=F_AMBER, opacity=0.3, size=4),
         ))
         _hsl = i_layout("Humidity (%) vs Mosquito Count")
@@ -870,7 +890,7 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
         humid_scatter.update_layout(**_hsl)
 
         wind_scatter = go.Figure(go.Scatter(
-            x=mosq_df["DailyAverageWindSpeed"], y=mosq_df["Mosq_Count"],
+            x=mosq_df["wind_avg_mph"], y=mosq_df["total_mosquitoes"],
             mode="markers", marker=dict(color="#6C8EBF", opacity=0.3, size=4),
         ))
         _wsl = i_layout("Wind Speed vs Mosquito Count")
@@ -880,9 +900,9 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
 
         def dual_ts(y2_col, y2_title, y2_color, title):
             fig = make_subplots(specs=[[{"secondary_y": True}]])
-            fig.add_trace(go.Bar(x=weekly["Week_Start"], y=weekly["Mosq_Count"],
+            fig.add_trace(go.Bar(x=weekly["week_start"], y=weekly["total_mosquitoes"],
                 name="Mosquito Count", marker_color=F_ORANGE, opacity=0.65), secondary_y=False)
-            fig.add_trace(go.Scatter(x=weekly["Week_Start"], y=weekly[y2_col],
+            fig.add_trace(go.Scatter(x=weekly["week_start"], y=weekly[y2_col],
                 name=y2_title, mode="lines", line=dict(color=y2_color, width=1.8)),
                 secondary_y=True)
             fig.update_layout(
@@ -896,12 +916,12 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
             )
             return fig
 
-        ts_temp   = dual_ts("DailyAverageDryBulbTemperature", "Temp (°F)",        F_BLUE,    "Mosquito Count + Temperature Over Time")
-        ts_precip = dual_ts("DailyPrecipitation",              "Precipitation",    F_BLUE,    "Mosquito Count + Precipitation Over Time")
-        ts_humid  = dual_ts("DailyAverageRelativeHumidity",    "Humidity (%)",     F_AMBER,   "Mosquito Count + Humidity Over Time")
-        ts_wind   = dual_ts("DailyAverageWindSpeed",           "Wind Speed (mph)", "#6C8EBF", "Mosquito Count + Wind Speed Over Time")
+        ts_temp   = dual_ts("temp_avg_f",   "Temp (°F)",        F_BLUE,    "Mosquito Count + Temperature Over Time")
+        ts_precip = dual_ts("precip_in",    "Precipitation",    F_BLUE,    "Mosquito Count + Precipitation Over Time")
+        ts_humid  = dual_ts("rh_avg",       "Humidity (%)",     F_AMBER,   "Mosquito Count + Humidity Over Time")
+        ts_wind   = dual_ts("wind_avg_mph", "Wind Speed (mph)", "#6C8EBF", "Mosquito Count + Wind Speed Over Time")
 
-        risk_dist = mosq_df["Risk_Level"].value_counts().sort_index()
+        risk_dist = weekly_risk_df["risk_level"].value_counts().sort_index()
         risk_bar = go.Figure(go.Bar(
             x=risk_dist.index, y=risk_dist.values,
             marker_color=[F_YELLOW, F_YELLOW, F_AMBER, F_AMBER, F_AMBER,
@@ -936,19 +956,18 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
                        "padding": "14px 20px", "marginBottom": "20px"},
                 children=[
                     html.P(
-                        "An Ordinary Least Squares (OLS) regression was fit to predict weekly mosquito trap counts "
-                        "from four weather variables: temperature, precipitation, humidity, and wind speed. "
-                        "Temperature emerged as the only statistically significant predictor (p < 0.001), with a "
-                        f"coefficient of +{ols_model['coefficients']['DailyAverageDryBulbTemperature']:.3f} — "
-                        "meaning each additional degree of average temperature corresponds to roughly 0.72 more "
-                        "mosquitoes per trap per week.",
+                        "A Ridge regression was trained on site-level weekly trap data (2018–2022) and tested on "
+                        "2023–2025. Five features are used: the prior week's mosquito count (log-transformed), "
+                        f"temperature, humidity, precipitation, and wind speed. Prior count (coefficient +{_rc['Prior Week Count (log)']:.3f}) "
+                        f"is the strongest predictor — populations are strongly autocorrelated week-to-week. "
+                        f"Temperature is the leading weather driver (coefficient +{_rc['Prior Avg Temp (°F)']:.3f}).",
                         style={"color": I_MUTED, "fontSize": "12px", "margin": "0 0 8px", "lineHeight": "1.7"},
                     ),
                     html.P(
-                        f"The model's R² of {ols_model['rsquared']:.4f} reflects that weather alone explains a modest "
-                        "portion of variance — other factors like standing water from construction activity, irrigation, "
-                        "and trap placement also play a large role. The value of this model is directional forecasting: "
-                        "as temperatures climb in spring, SWMAC can anticipate rising populations 2–4 weeks ahead.",
+                        f"The model achieves a test R² of {ridge_model['rsquared']:.4f} — a 35× improvement over the "
+                        "prior OLS model (R²=0.015). Cross-validated R² is 0.50 ± 0.10, confirming it generalizes well. "
+                        "RMSE of 83 and MAE of 28 are in raw mosquito counts. The lag feature gives SWMAC "
+                        "a one-week lead time: this week's conditions predict next week's risk.",
                         style={"color": I_MUTED, "fontSize": "12px", "margin": 0, "lineHeight": "1.7"},
                     ),
                 ],
@@ -1007,15 +1026,13 @@ def update_dashboard(tab, tiers, classes, year_range, layers):
                 "driver of mosquito activity in this region — temperature remains the dominant "
                 "environmental signal.", "#6C8EBF"),
                 dcc.Graph(figure=ts_wind, style={"height": "260px"})),
-            html.H3("Risk Classification (1–10 Scale)", style={"color": F_ORANGE, "fontSize": "14px", "margin": "16px 0 10px"}),
-            irow(insight_card("Z-score based risk levels",
-                "The 1–10 risk scale classifies each trap reading relative to the "
-                f"historical mean ({_mosq_mean:.0f} mosquitoes) and standard deviation ({_mosq_std:.0f}). "
-                "Level 5 represents counts near the mean. Levels 8–10 correspond to population "
-                "events exceeding 1.5–3 standard deviations above average — significant outbreaks "
-                "warranting immediate SWMAC response. The majority of readings fall at level 1 "
-                "(off-season, near-zero counts), which is expected given St. George's short "
-                "active mosquito season.", F_ORANGE),
+            html.H3("Risk Classification (0–10 Scale)", style={"color": F_ORANGE, "fontSize": "14px", "margin": "16px 0 10px"}),
+            irow(insight_card("Distribution-anchored risk levels",
+                "The 0–10 risk scale is anchored to the historical distribution of trap counts "
+                f"(mean = {_mosq_mean:.0f}, SD = {_mosq_std:.0f} mosquitoes). "
+                "Level 0 is below the median (8 mosquitoes). Level 4 is near the mean (40). "
+                "Level 7 = mean + 1 SD (147). Levels 9–10 are severe outbreaks (256–365+). "
+                "This chart shows the distribution of risk levels across all site-weeks in the test period.", F_ORANGE),
                 dcc.Graph(figure=risk_bar, style={"height": "260px"})),
         ]
 
